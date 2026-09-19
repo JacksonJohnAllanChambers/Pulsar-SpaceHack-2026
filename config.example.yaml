@@ -45,7 +45,7 @@ verifier:
   enabled: true
   model_path: "applet/models/verifier_int8.onnx"
   fallback_model_path: "applet/models/verifier_fp32.onnx"
-  reject_below: 0.40                # CNN probability under which a candidate is dropped ...
+  reject_below: 0.80                # CNN probability under which a candidate is dropped ...
   physics_override_score: 0.95      # ... unless the physics evidence is this strong
   intra_op_threads: 4
 

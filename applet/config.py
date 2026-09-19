@@ -72,7 +72,7 @@ class VerifierConfig(BaseModel):
     enabled: bool = True
     model_path: str = "applet/models/verifier_int8.onnx"
     fallback_model_path: str = "applet/models/verifier_fp32.onnx"
-    reject_below: float = 0.40  # CNN probability under which a candidate is dropped ...
+    reject_below: float = 0.80  # CNN probability under which a candidate is dropped ...
     physics_override_score: float = 0.95  # ... unless the physics evidence is near-certain
     intra_op_threads: int = 4
 

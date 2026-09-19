@@ -3,26 +3,26 @@
   "parameters": 47041,
   "input": "N x 4 x 64 x 64 (R,G,B,NIR), median-subtracted reflectance / 0.10",
   "training_data": {
-    "synthetic_chips": 11676,
-    "real_chips": 0
+    "synthetic_chips": 11607,
+    "real_chips": 3608
   },
-  "validation_chips": 2332,
+  "validation_chips": 3056,
   "variants": {
     "fp32": {
       "file": "verifier_fp32.onnx",
       "size_kb": 185.4,
-      "val_accuracy": 0.985,
-      "val_auc": 0.9875,
-      "latency_ms_per_32_chips": 31.39,
-      "latency_ms_per_chip": 0.981
+      "val_accuracy": 0.8053,
+      "val_auc": 0.9816,
+      "latency_ms_per_32_chips": 4.43,
+      "latency_ms_per_chip": 0.138
     },
     "int8": {
       "file": "verifier_int8.onnx",
       "size_kb": 59.0,
-      "val_accuracy": 0.9858,
-      "val_auc": 0.987,
-      "latency_ms_per_32_chips": 6.25,
-      "latency_ms_per_chip": 0.195
+      "val_accuracy": 0.8521,
+      "val_auc": 0.984,
+      "latency_ms_per_32_chips": 2.87,
+      "latency_ms_per_chip": 0.09
     }
   }
 }

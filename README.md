@@ -27,7 +27,7 @@ where they claim to be* — instead of the image.
 | Decision | Reason |
 | :-- | :-- |
 | **Physics first, CNN second** | Water reflects ~1 % in NIR; steel and foam 10–40 %. A local-contrast (CFAR) test finds a 10-pixel hull for a few OpenCV calls. Running a detector network over 16 Mpx of empty ocean would cost orders of magnitude more energy to reach the same candidates. |
-| **CNN only on candidate chips** | Whitecaps, cloud puffs and islets share the ship's NIR signature; shape and context separate them, which is what a CNN is good at. On held-out scenes it removes **93 % of the physics stage's false alarms** while costing 2 % recall — for 0.2 ms per chip. |
+| **CNN only on candidate chips** | Whitecaps, cloud puffs and islets share the ship's NIR signature; shape and context separate them, which is what a CNN is good at. On held-out synthetic scenes it removes 92 % of the physics stage's false alarms for 1 % recall; on held-out real Sentinel-2 it halves them and loses no real ship — for ~0.1 ms per chip. |
 | **Wake = a line, not a "V"** | At 4.75 m GSD the Kelvin cusp arms are rarely resolved; the turbulent centreline always is. Each candidate gets a 360-ray transform centred on the hull: the ray with contiguous excess contrast is the wake, the opposite bearing is the heading. A Kelvin-arm test (paired ridges at ±19.47° cast from the bow) is wired in but experimental: see limitations. |
 | **Speed from wave physics, or not at all** | Transverse wake waves obey λ = 2πV²/g. The detector reports a speed only when a clean spectral line with ≥ 8 cycles exists astern **and is absent dead ahead** (the same line through the hull, so swell cancels). Otherwise `estimated_speed_knots` is `null` — never a guess. It is the least mature measurement here, so a speed disagreement with AIS is advisory and cannot raise an anomaly on its own. |
 | **Reflectance units, metres not pixels** | Every threshold is in reflectance or metres, converted per scene from the manifest GSD. The same config runs 4.75 m HyperScape100 and 10 m Sentinel-2. |
@@ -35,39 +35,75 @@ where they claim to be* — instead of the image.
 
 ## Measured results
 
-Synthetic scenes are rendered in reflectance with sub-pixel hulls, turbulent wakes, Kelvin arms, transverse
-waves, swell, whitecaps, sunglint, fractal cloud, coast with surf and islets (`simulation/scene_synth.py`).
-The verifier was trained on seed 2026, thresholds were tuned on seed 777, and the numbers below are from
-**seed 4242, which was never looked at during development** (60 scenes, 130 visible vessels):
+### Real imagery (Sentinel-2, 10 m)
+
+Scored on **SEN2MS Vessel BBoxes** (Dalhousie, CC-BY-4.0): real Sentinel-2 chips whose vessel boxes were
+derived from AIS, so each ship comes with a true heading, speed and length. Sentinel-2 products are split
+train / test (`crc32(product) % 4`), all tuning was done on train products, and these numbers are from the
+**held-out test products** (225 vessel chips, 760 chips with no AIS vessel):
 
 | | Physics only | + INT8 CNN verifier |
 | :-- | --: | --: |
-| Precision | 0.44 | **0.92** |
-| Recall | 0.81 | **0.79** |
-| F1 | 0.57 | **0.85** |
-| Heading error (median / within 10°) | | 0.4° / 98.8 % |
-| AIS anomaly class correct (dark / mismatch / known) | | 100 % of matched vessels |
+| Recall, open-water chips | **0.82** (107 / 131) | **0.82** (no real ship lost to the CNN) |
+| Recall, ships under way (AIS SOG >= 3 kn) | **0.83** (75 / 90) | **0.83** |
+| Recall, moored (SOG < 1 kn) | 0.48 | 0.48 |
+| Recall, every labelled vessel incl. in-port | 0.32 | 0.32 |
+| False alarms per 1000 km2 of scenes with no AIS vessel | 73 | **37** |
+| Heading vs AIS heading (n = 51) | | median **4 deg**, 86 % within 20 deg, 4 % flipped 180 deg |
+| Hull length vs AIS length | | 32 % mean error |
 
-Misses are dominated by vessels inside the land or cloud keep-out buffers and wake-less small craft in gales.
-**These are synthetic numbers.** They prove the pipeline and the measurement harness; they are not a claim
-about real imagery. See *Real data* below for the path to one.
+How to read this honestly: SEN2MS is dominated by ships **alongside quays inside harbours**; the detector's
+200 m shoreline keep-out drops those on purpose (a moored ship is not a dark contact at sea), which is why the
+all-vessel recall is 0.32 while open-water and under-way recall is 0.82-0.83. The false-alarm figure is an upper
+bound: "no AIS vessel" does not mean "no vessel", and several of the alarms are visibly small craft. Remaining
+real false alarms are wispy cumulus, whitecaps, shoals and jetties. The published arrays are percentile-stretched
+per product rather than radiometric, so `training/sen2ms.py` re-anchors each chip's water level before use.
 
-Verifier (`applet/models/model_card.json`):
+The first CNN, trained on synthetic chips only, **rejected 13 of 124 real ships** and accepted coastline
+fragments. Retraining on synthetic + 3 608 mined real chips (train products only) fixed both: zero real ships
+lost on the test products and half the false alarms. That sim-to-real gap is the single most important thing
+the real data taught us.
+
+Five full 20 km Sentinel-2 L2A scenes (Gibraltar, Suez, Long Beach, Halifax, Dover;
+`scripts/fetch_sentinel2.py`) run end-to-end in 3.5 s for 21 Mpx and are selectable in the ground console. In
+the Gibraltar scene 28 of the 30 reported contacts are unmistakably vessels, each placed at the head of its wake.
+
+### Synthetic scenes (4.75 m)
+
+Rendered in reflectance with sub-pixel hulls, turbulent wakes, Kelvin arms, transverse waves, swell, whitecaps,
+sunglint, fractal cloud, coast with surf and islets (`simulation/scene_synth.py`). Verifier trained on seed 2026,
+thresholds tuned on seed 777, numbers below from **seed 4242, never used in development** (60 scenes, 130 vessels):
+
+| | Physics only | + INT8 CNN verifier |
+| :-- | --: | --: |
+| Precision | 0.43 | **0.90** |
+| Recall | 0.78 | **0.77** |
+| F1 | 0.55 | **0.83** |
+| Heading error (median / within 10 deg) | | 0.5 deg / 97.6 % |
+| AIS anomaly class correct (dark / mismatch / known) | | 97 % of matched vessels |
+
+Synthetic scenes are the only place the AIS logic can be scored, because no open AIS archive matches the real
+scenes. Misses are dominated by vessels inside the land / cloud keep-outs and wake-less small craft in gales.
+
+### Verifier (`applet/models/model_card.json`)
 
 | | FP32 | INT8 (flight) |
 | :-- | --: | --: |
 | File size | 185 KB | **59 KB** |
-| Validation AUC | 0.9875 | 0.9870 |
-| Latency per chip (ORT CPU, x86 dev box) | 0.98 ms | **0.20 ms** |
+| Validation AUC (synthetic + real chips) | 0.982 | 0.984 |
+| Latency per chip (ORT CPU, x86 dev box) | 0.14 ms | **0.09 ms** |
 
-Edge budget (native x86 dev box — *not* a Jetson timing claim; see `scripts/benchmark.py`):
+### Edge budget
 
-| Bundle | Wall clock | Peak RAM | Raw → downlink |
+Native x86 dev box -- *not* a Jetson timing claim; see `scripts/benchmark.py`:
+
+| Bundle | Wall clock | Peak RAM | Raw -> downlink |
 | :-- | --: | --: | --: |
-| 6 × 1024² scenes | 0.9 s | 0.41 GB (2.9 % of 14 GB) | 54 MB → 6.8 KB (8 000×) |
-| + one 4096² full swath | 7.2 s | 1.43 GB (10 % of 14 GB) | 182 MB → 14 KB (13 000×) |
+| 6 x 1024^2 synthetic scenes | 0.9 s | 0.41 GB (2.9 % of 14 GB) | 54 MB -> 6.8 KB (8 000x) |
+| + one 4096^2 full swath | 7.2 s | 1.43 GB (10 % of 14 GB) | 182 MB -> 14 KB (13 000x) |
+| 5 x 2048^2 real Sentinel-2 scenes | 3.3 s | 1.2 GB (8.3 % of 14 GB) | 160 MB -> 54 KB incl. 180 target chips (2 900x) |
 
-The tarball is **byte-identical across runs** (fixed mtimes, ordering and JPEG stretch) — tested.
+The tarball is **byte-identical across runs** (fixed mtimes, ordering and JPEG stretch) -- tested.
 
 ## Quick start
 
@@ -81,7 +117,7 @@ python -m ground.server                              # GUI at http://127.0.0.1:8
 Other tools:
 
 ```bash
-python -m pytest -q                                  # 31 tests: resilience, physics, determinism
+python -m pytest -q                                  # 32 tests: resilience, physics, determinism
 python scripts/evaluate.py -i data/sample_bundle     # precision / recall / heading / AIS accuracy
 python scripts/evaluate.py --no-verifier             # ...what the CNN buys
 python scripts/generate_synthetic_data.py --random 60 --seed 4242 -o data/heldout_bundle
@@ -136,16 +172,24 @@ priority first, until the byte budget is spent. Known, AIS-consistent traffic ne
 
 ## Real data
 
-The verifier is trained on synthetic chips because no labelled 4.75 m VNIR ship set exists and none is
-provided. The pipeline is ready for real imagery — Sentinel-2 L2A (B04, B03, B02, B08 at 10 m, scale 0.0001,
-offset −0.1) drops into a bundle as-is, and `training/train_verifier.py --real-npz` mixes real labelled chips
-into training. Openly downloadable candidates: *SEN2MS Vessel BBoxes* (Zenodo 15571607, 3 681 Sentinel-2 chips
-with AIS-derived boxes) and Sentinel-2 COGs via the Element84 Earth Search STAC API.
+```bash
+python scripts/fetch_sentinel2.py -o data/real/s2_bundle      # 5 x 20 km Sentinel-2 L2A windows, ~95 MB, no login
+python training/sen2ms.py mine                                # real chips from SEN2MS train products
+python training/train_verifier.py --real-npz data/real/sen2ms/train_chips.npz
+python training/sen2ms.py evaluate                            # scorecard on held-out products
+```
+
+`fetch_sentinel2.py` finds the least cloudy recent scene per area through the public Element84 Earth Search STAC
+API and range-reads only B04/B03/B02/B08 windows from the public COGs. SEN2MS is one 565 MB zip from Zenodo
+(record 15571607) placed at `data/real/sen2ms/`; it is read in place. Everything under `data/real/` is gitignored.
+Contains modified Copernicus Sentinel data. MASATI (Gallego et al. 2018, Alashhab et al. 2019; research use only,
+RGB, no NIR) is a candidate second source of real hard negatives.
 
 ## Honest limitations
 
-* All accuracy figures are on synthetic scenes; real sunglint, ship-like rocks, platforms and ice will add
-  failure modes the simulator does not have.
+* Real-image validation is at 10 m (Sentinel-2), not the 4.75 m target GSD, and on a dataset whose radiometry had
+  to be repaired at ingest. Real false alarms (thin cloud, whitecaps, shoals, jetties) are still ~37 per 1000 km2.
+* Ships moored alongside, or within 200 m of the land mask, are not reported (by design).
 * No Jetson was available: TensorRT engines, DLA, shared CPU/GPU memory contention, power and thermals are
   unvalidated. The design minimises exposure (CPU-only path is the verified one; the model is 59 KB).
 * The Kelvin-arm measurement has not yet fired, even on synthetic ships rendered with arms: the CFAR background
@@ -166,7 +210,7 @@ simulation/        scene renderer (ground-side)
 training/          verifier training, ONNX export, INT8 quantisation
 ground/            FastAPI + single-page console
 scripts/           bundle generator, evaluate, benchmark, container runners
-tests/             31 tests
+tests/             32 tests
 docker/            Dockerfile.arm64
 docs/              hackathon rules, rubric, track notes, pitch template
 ```
