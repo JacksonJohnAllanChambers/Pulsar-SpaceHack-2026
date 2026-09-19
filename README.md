@@ -223,6 +223,17 @@ JPEG chips, per-stage latency, RAM against the 14 GB envelope, the detection fun
 CFAR threshold, physics threshold, cloud limit and CNN on/off are sliders, so the precision/recall trade can
 be shown live. No CDN or internet resources are used.
 
+#### Transfer operations viewer
+
+Open `http://127.0.0.1:8050/transfer` after starting the ground server to watch the local image handoff without
+changing it. The viewer polls `src/rawImages`, `src/processing`, `src/downlink/queues/{priority,nonPriority}`,
+`src/noShipDetected`, `src/sent`, and `src/fleet_alerts` every 1.5 seconds. It shows current folder contents,
+recent observed moves, image thumbnails, and the receiving fleet ping for delivered dark-vessel alerts.
+
+For a full handoff demo, run `python -m src.pyFlows.workflow` in a second terminal and place an image in
+`src/rawImages`; or run a normal applet pass to populate the downlink queues directly. The page is observational:
+it never starts a pass, dispatches a fleet alert, or moves a file.
+
 ### Emulated Jetson container
 
 ```bash

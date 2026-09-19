@@ -15,7 +15,11 @@ import json
 import math
 import argparse
 import threading
+import time
+from collections import deque
+from pathlib import Path
 from typing import Dict, Any, Optional
+from xml.etree import ElementTree
 
 import cv2
 import numpy as np
@@ -29,7 +33,7 @@ sys.path.insert(0, ROOT)
 from applet.config import AppletConfig  # noqa: E402
 from applet.runner import run_pass  # noqa: E402
 from applet.core.exceptions import InvalidManifestError  # noqa: E402
-from ground.fleets import FLEETS, dispatch_sent_alerts, load_alerts  # noqa: E402
+from ground.fleets import FLEETS, dispatch_sent_alerts, load_alerts, parse_alert_filename  # noqa: E402
 from scripts.evaluate import score_context  # noqa: E402
 
 DATA_DIR = os.path.join(ROOT, "data")
@@ -38,11 +42,33 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 SENT_DIR = os.path.join(ROOT, "src", "sent")
 FLEET_ALERT_PATH = os.path.join(DATA_DIR, "outputs", "fleet_alerts.json")
 FLEET_OUTPUT_DIR = os.path.join(ROOT, "src", "fleet_alerts")
+TRANSFER_ROOT = os.path.join(ROOT, "src")
 MAX_LAYER_PX = 2048
+TRANSFER_EVENT_LIMIT = 100
+IMAGE_EXTENSIONS = {".bmp", ".gif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
+TRANSFER_STAGE_LABELS = {
+    "incoming": "Incoming",
+    "processing": "Processing",
+    "priority": "Priority queue",
+    "standard": "Standard queue",
+    "no_ship": "No ship",
+    "sent": "Downlink sent",
+}
+TRANSFER_EVENT_TYPES = {
+    "incoming": "arrived",
+    "processing": "processing",
+    "priority": "queued_priority",
+    "standard": "queued_standard",
+    "no_ship": "no_ship",
+    "sent": "downlinked",
+}
 
 app = FastAPI(title="Tactical Edge Sentinel - Ground Console")
 _state: Dict[str, Any] = {"context": None, "scenes": {}, "chips": {}, "downlink": None}
 _lock = threading.Lock()
+_transfer_lock = threading.Lock()
+_transfer_previous: Dict[str, Dict[str, Any]] = {}
+_transfer_events = deque(maxlen=TRANSFER_EVENT_LIMIT)
 
 
 class RunRequest(BaseModel):
@@ -75,9 +101,114 @@ def list_bundles():
     return sorted(out)
 
 
+def transfer_stage_dirs() -> Dict[str, Path]:
+    root = Path(TRANSFER_ROOT)
+    return {
+        "incoming": root / "rawImages",
+        "processing": root / "processing",
+        "priority": root / "downlink" / "queues" / "priority",
+        "standard": root / "downlink" / "queues" / "nonPriority",
+        "no_ship": root / "noShipDetected",
+        "sent": root / "sent",
+    }
+
+
+def _transfer_file(stage: str, path: Path) -> Dict[str, Any]:
+    stat = path.stat()
+    alert = parse_alert_filename(path)
+    return {
+        "id": f"{stage}:{path.name}",
+        "stage": stage,
+        "stage_label": TRANSFER_STAGE_LABELS[stage],
+        "filename": path.name,
+        "bytes": stat.st_size,
+        "modified_at": stat.st_mtime,
+        "image_url": f"/api/transfer-image/{stage}/{path.name}",
+        "alert": alert,
+    }
+
+
+def _fleet_ping(path: Path) -> Dict[str, Any]:
+    info_path = path / "info.xml"
+    record: Dict[str, Any] = {"path": str(path.relative_to(Path(TRANSFER_ROOT))).replace("\\", "/"),
+                              "folder": path.name, "warning": None}
+    try:
+        root = ElementTree.parse(info_path).getroot()
+        fleet = root.find("fleet")
+        record.update({
+            "detection_id": root.findtext("detection_id"),
+            "scene_id": root.findtext("scene_id"),
+            "classification": root.findtext("classification"),
+            "latitude": root.findtext("latitude"),
+            "longitude": root.findtext("longitude"),
+            "distance_nm": root.findtext("distance_nm"),
+            "source_filename": root.findtext("source_filename"),
+            "dispatched_at": root.findtext("dispatched_at"),
+            "fleet": {"id": fleet.findtext("id"), "name": fleet.findtext("name"),
+                      "latitude": fleet.findtext("latitude"), "longitude": fleet.findtext("longitude")}
+            if fleet is not None else None,
+        })
+    except (OSError, ElementTree.ParseError) as error:
+        record["warning"] = f"Unable to read info.xml: {type(error).__name__}"
+    image_path = path / "image.jpg"
+    if image_path.is_file():
+        record["image_url"] = f"/api/transfer-image/fleet_ping/{path.parent.name}/{path.name}/image.jpg"
+    else:
+        record["warning"] = record["warning"] or "Ping image is missing"
+    return record
+
+
+def _transfer_snapshot() -> Dict[str, Any]:
+    stages = []
+    files = []
+    for stage, directory in transfer_stage_dirs().items():
+        records = []
+        if directory.is_dir():
+            for path in sorted(directory.iterdir(), key=lambda item: item.name.lower()):
+                if not path.is_file() or path.suffix.lower() not in IMAGE_EXTENSIONS:
+                    continue
+                try:
+                    records.append(_transfer_file(stage, path))
+                except OSError:
+                    continue  # A workflow moved the file between iterdir and stat.
+        files.extend(records)
+        stages.append({"id": stage, "label": TRANSFER_STAGE_LABELS[stage], "count": len(records), "files": records})
+
+    pings = []
+    fleet_root = Path(TRANSFER_ROOT) / "fleet_alerts"
+    if fleet_root.is_dir():
+        for info_path in sorted(fleet_root.glob("*/ping_*/info.xml")):
+            pings.append(_fleet_ping(info_path.parent))
+    return {"timestamp": time.time(), "stages": stages, "files": files, "fleet_pings": pings}
+
+
+def transfer_state() -> Dict[str, Any]:
+    """Return a filesystem snapshot plus transitions observed since this server started."""
+    global _transfer_previous
+    with _transfer_lock:
+        snapshot = _transfer_snapshot()
+        current = {item["filename"]: item for item in snapshot["files"]}
+        for filename, item in current.items():
+            previous = _transfer_previous.get(filename)
+            if previous is None or previous["stage"] != item["stage"]:
+                _transfer_events.appendleft({
+                    "event": TRANSFER_EVENT_TYPES[item["stage"]], "timestamp": snapshot["timestamp"],
+                    "filename": filename, "stage": item["stage"], "stage_label": item["stage_label"],
+                    "from_stage": previous["stage"] if previous else None, "alert": item["alert"],
+                })
+        _transfer_previous = current
+        snapshot["events"] = list(_transfer_events)
+        return snapshot
+
+
 @app.get("/")
 def index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"), headers={"Cache-Control": "no-store"})
+
+
+@app.get("/transfer")
+def transfer_index():
+    return FileResponse(os.path.join(STATIC_DIR, "transfer.html"), headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/bundles")
@@ -88,6 +219,30 @@ def bundles():
 @app.get("/api/fleet-alerts")
 def fleet_alerts():
     return {"fleets": FLEETS, "alerts": load_alerts(FLEET_ALERT_PATH)}
+
+
+@app.get("/api/transfer-state")
+def transfer_state_api():
+    return transfer_state()
+
+
+@app.get("/api/transfer-image/{stage}/{filename:path}")
+def transfer_image(stage: str, filename: str):
+    stages = transfer_stage_dirs()
+    if stage == "fleet_ping":
+        root = Path(TRANSFER_ROOT) / "fleet_alerts"
+    else:
+        root = stages.get(stage)
+    if root is None or not filename or Path(filename).is_absolute():
+        raise HTTPException(400, "invalid transfer image path")
+    path = (root / filename).resolve()
+    try:
+        path.relative_to(root.resolve())
+    except ValueError:
+        raise HTTPException(400, "invalid transfer image path")
+    if path.suffix.lower() not in IMAGE_EXTENSIONS or not path.is_file():
+        raise HTTPException(404, "transfer image not found")
+    return FileResponse(path, headers={"Cache-Control": "no-store"})
 
 
 @app.post("/api/fleet-alerts/dispatch")
