@@ -161,7 +161,10 @@ def main():
         labels = np.concatenate([labels, rl])
         groups = np.concatenate([groups, rg])
         source["real_chips"] += int(len(rl))
-        source.setdefault("real_sources", []).append({"file": os.path.basename(path),
+        # Two different corpora can both be called train_chips.npz; keep the parent directory
+        # so the model card says which is which.
+        tag = "/".join(os.path.normpath(path).replace("\\", "/").split("/")[-2:])
+        source.setdefault("real_sources", []).append({"file": tag,
                                                       "chips": int(len(real["labels"])),
                                                       "repeat": repeat})
         print(f"      + {len(rl)} real chips from {os.path.basename(path)} "
