@@ -1,5 +1,8 @@
+import shutil
 import time
 from pathlib import Path
+
+from applet.core.crypto import decrypt_file, encrypt_bytes
 
 if __package__:
     from .file_moves import move_image_with_xml
@@ -15,12 +18,22 @@ PRIORITY_IMAGES_PER_LESS_PRIORITY_IMAGE = 3
 def downlink_image(image_path, sent_dir, rate_bytes_per_second=TRANSFER_RATE_BYTES_PER_SECOND):
     transfer_seconds = image_path.stat().st_size / rate_bytes_per_second
     time.sleep(transfer_seconds)
-    move_image_with_xml(image_path, sent_dir)
+    if image_path.name.endswith(".enc"):
+        plaintext_name = image_path.name.removesuffix(".enc")
+        sent_path = Path(sent_dir) / image_path.name
+        sent_path.write_bytes(encrypt_bytes(decrypt_file(image_path), associated_data=plaintext_name.encode("utf-8")))
+        image_path.unlink()
+        xml_path = image_path.with_suffix("").with_suffix(".xml.enc")
+        if xml_path.is_file():
+            shutil.move(xml_path, Path(sent_dir) / xml_path.name)
+    else:
+        move_image_with_xml(image_path, sent_dir)
 
 
 def next_image(source_dir):
     for image_path in source_dir.iterdir():
-        if image_path.is_file() and image_path.suffix.lower() in IMAGE_EXTENSIONS:
+        plaintext_path = Path(image_path.name.removesuffix(".enc"))
+        if image_path.is_file() and plaintext_path.suffix.lower() in IMAGE_EXTENSIONS:
             return image_path
     return None
 

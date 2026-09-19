@@ -31,6 +31,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from applet.config import AppletConfig  # noqa: E402
+from applet.core.crypto import decrypt_file  # noqa: E402
 from applet.runner import run_pass  # noqa: E402
 from applet.core.exceptions import InvalidManifestError  # noqa: E402
 from ground.fleets import FLEETS, dispatch_sent_alerts, load_alerts, parse_alert_filename  # noqa: E402
@@ -132,11 +133,11 @@ def _transfer_file(stage: str, path: Path) -> Dict[str, Any]:
 
 
 def _fleet_ping(path: Path) -> Dict[str, Any]:
-    info_path = path / "info.xml"
+    info_path = path / "info.xml.enc"
     record: Dict[str, Any] = {"path": str(path.relative_to(Path(TRANSFER_ROOT))).replace("\\", "/"),
                               "folder": path.name, "warning": None}
     try:
-        root = ElementTree.parse(info_path).getroot()
+        root = ElementTree.fromstring(decrypt_file(info_path))
         fleet = root.find("fleet")
         record.update({
             "detection_id": root.findtext("detection_id"),
@@ -152,10 +153,10 @@ def _fleet_ping(path: Path) -> Dict[str, Any]:
             if fleet is not None else None,
         })
     except (OSError, ElementTree.ParseError) as error:
-        record["warning"] = f"Unable to read info.xml: {type(error).__name__}"
-    image_path = path / "image.jpg"
+        record["warning"] = f"Unable to read encrypted ping metadata: {type(error).__name__}"
+    image_path = path / "image.jpg.enc"
     if image_path.is_file():
-        record["image_url"] = f"/api/transfer-image/fleet_ping/{path.parent.name}/{path.name}/image.jpg"
+        record["image_url"] = f"/api/transfer-image/fleet_ping/{path.parent.name}/{path.name}/image.jpg.enc"
     else:
         record["warning"] = record["warning"] or "Ping image is missing"
     return record
@@ -180,7 +181,7 @@ def _transfer_snapshot() -> Dict[str, Any]:
     pings = []
     fleet_root = Path(TRANSFER_ROOT) / "fleet_alerts"
     if fleet_root.is_dir():
-        for info_path in sorted(fleet_root.glob("*/ping_*/info.xml")):
+        for info_path in sorted(fleet_root.glob("*/ping_*/info.xml.enc")):
             pings.append(_fleet_ping(info_path.parent))
     return {"timestamp": time.time(), "stages": stages, "files": files, "fleet_pings": pings}
 
@@ -248,8 +249,11 @@ def transfer_image(stage: str, filename: str):
         path.relative_to(root.resolve())
     except ValueError:
         raise HTTPException(400, "invalid transfer image path")
-    if path.suffix.lower() not in IMAGE_EXTENSIONS or not path.is_file():
+    image_name = path.name.removesuffix(".enc")
+    if Path(image_name).suffix.lower() not in IMAGE_EXTENSIONS or not path.is_file():
         raise HTTPException(404, "transfer image not found")
+    if path.name.endswith(".enc"):
+        return Response(content=decrypt_file(path), media_type="image/jpeg", headers={"Cache-Control": "no-store"})
     return FileResponse(path, headers={"Cache-Control": "no-store"})
 
 

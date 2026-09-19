@@ -1,5 +1,6 @@
 from xml.etree import ElementTree
 
+from applet.core.crypto import decrypt_file
 from ground.fleets import FLEETS, dispatch_sent_alerts, nearest_fleet, parse_alert_filename
 
 
@@ -27,8 +28,9 @@ def test_dispatch_sent_alerts_parses_and_persists_dark_vessel(tmp_path):
     assert len(alerts) == 1
     assert alerts[0]["fleet"]["id"] == "longbeach"
     ping_dir = output_dir / "longbeach" / "ping_S2_LONGBEACH_T001"
-    assert (ping_dir / "image.jpg").read_bytes() == b"jpeg"
-    info = ElementTree.parse(ping_dir / "info.xml").getroot()
+    assert not (ping_dir / "image.jpg").exists()
+    assert decrypt_file(ping_dir / "image.jpg.enc") == b"jpeg"
+    info = ElementTree.fromstring(decrypt_file(ping_dir / "info.xml.enc"))
     assert info.findtext("fleet/name") == "Long Beach Response"
     assert info.findtext("scene_id") == "S2_LONGBEACH"
     assert dispatch_sent_alerts(tmp_path / "sent", alert_path, output_dir) == []

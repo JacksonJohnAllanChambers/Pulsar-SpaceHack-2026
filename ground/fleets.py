@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 from xml.etree import ElementTree
 
+from applet.core.crypto import decrypt_file, encrypt_bytes
 from applet.utils.geo import haversine_distance_nm
 
 
@@ -95,8 +96,13 @@ def write_fleet_ping(image_path: Path, alert: Dict[str, Any], fleet_output_dir: 
     """Copy a delivered crop and its metadata into the receiving fleet's alert folder."""
     ping_dir = _ping_directory(alert, fleet_output_dir)
     ping_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(image_path, ping_dir / "image.jpg")
-    _write_ping_info(ping_dir / "info.xml", alert)
+    image_bytes = decrypt_file(image_path) if image_path.name.endswith(".enc") else image_path.read_bytes()
+    (ping_dir / "image.jpg.enc").write_bytes(encrypt_bytes(image_bytes, associated_data=b"image.jpg"))
+    info_path = ping_dir / "info.xml"
+    _write_ping_info(info_path, alert)
+    info_bytes = info_path.read_bytes()
+    info_path.unlink()
+    (ping_dir / "info.xml.enc").write_bytes(encrypt_bytes(info_bytes, associated_data=b"info.xml"))
     return ping_dir
 
 
@@ -106,22 +112,24 @@ def dispatch_sent_alerts(sent_dir: Path, alert_path: Path, fleet_output_dir: Pat
     alerts = load_alerts(alert_path)
     alerts_by_source = {alert.get("source_filename"): alert for alert in alerts}
     new_alerts = []
-    for image_path in sorted(sent_dir.glob("*.jpg")) if sent_dir.is_dir() else []:
-        target = parse_alert_filename(image_path)
+    sent_images = sorted(sent_dir.glob("*.jpg")) + sorted(sent_dir.glob("*.jpg.enc")) if sent_dir.is_dir() else []
+    for image_path in sent_images:
+        source_name = image_path.name.removesuffix(".enc")
+        target = parse_alert_filename(Path(source_name))
         if target is None:
             continue
-        alert = alerts_by_source.get(image_path.name)
+        alert = alerts_by_source.get(source_name)
         if alert is None:
             fleet = nearest_fleet(target["latitude"], target["longitude"])
             alert = {
                 **target,
                 "fleet": {key: fleet[key] for key in ("id", "name", "latitude", "longitude")},
                 "distance_nm": fleet["distance_nm"],
-                "source_filename": image_path.name,
+                "source_filename": source_name,
                 "dispatched_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             }
             alerts.append(alert)
-            alerts_by_source[image_path.name] = alert
+            alerts_by_source[source_name] = alert
             new_alerts.append(alert)
         write_fleet_ping(image_path, alert, fleet_output_dir)
     if new_alerts:
