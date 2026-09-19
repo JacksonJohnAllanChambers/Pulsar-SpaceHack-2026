@@ -127,7 +127,15 @@ class DownlinkPackager:
                 "geometry": {"type": "Point", "coordinates": [c["longitude"], c["latitude"]]},
                 "properties": {k: tgt.get(k) for k in _PROPERTY_KEYS},
             })
-        for ais in context.get("ais_not_observed", []):
+        # Only a resolvable broadcaster missing from clear open water is intelligence (a possible ghost
+        # transponder). Ships in port or too small to resolve are merely counted in the metadata.
+        not_observed = context.get("ais_not_observed", [])
+        reason_counts: Dict[str, int] = {}
+        for ais in not_observed:
+            reason_counts[ais["reason"]] = reason_counts.get(ais["reason"], 0) + 1
+        for ais in not_observed:
+            if ais["reason"] != "CLEAR_WATER_NO_TARGET":
+                continue
             features.append({
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [ais["predicted_longitude"], ais["predicted_latitude"]]},
@@ -140,6 +148,7 @@ class DownlinkPackager:
                 "pass_id": self.config.mission.orbital_pass_id,
                 "total_targets": len(targets),
                 "dark_vessels": context.get("dark_vessels_count", 0),
+                "ais_not_observed_by_reason": reason_counts,
             },
             "features": features,
         }

@@ -63,6 +63,7 @@ class DetectionConfig(BaseModel):
     kelvin_half_angle_deg: float = 19.47
     kelvin_tolerance_deg: float = 6.0
 
+    parallax_reject_px: float = 3.0  # band-to-band displacement that marks an aircraft, not a vessel
     min_physics_score: float = 0.35
     chip_crop_size_px: int = 64
     max_candidates_per_scene: int = 400
@@ -83,6 +84,9 @@ class AISCorrelationConfig(BaseModel):
     gate_growth_fraction: float = 0.25  # inner gate grows by this fraction of distance run since the fix
     max_heading_delta_deg: float = 35.0
     speed_tolerance_knots: float = 6.0
+    max_fix_age_hours: float = 3.0  # older AIS fixes cannot identify a contact
+    static_mismatch_min_wake_m: float = 300.0  # "wake but AIS says stopped" needs at least this much wake ...
+    static_mismatch_min_wake_snr: float = 8.0  # ... at this strength; piers beside berthed ships mimic short wakes
     speed_can_raise_anomaly: bool = False  # speed disagreement alone is advisory until validated on real wakes
     default_delta_hours: float = 0.0
 

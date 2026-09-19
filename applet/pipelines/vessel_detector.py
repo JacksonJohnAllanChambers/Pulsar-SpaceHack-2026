@@ -439,7 +439,17 @@ class VesselDetector(BasePipeline):
         hull_len_m, hull_wid_m = hull_len * gsd, hull_wid * gsd
         physics = self._physics_score(peak_z, hull_len_m, hull_wid_m, wake, occluded)
 
-        if occluded:
+        # Band-parallax test. A pushbroom imager records its bands a fraction of a second apart, so
+        # anything much faster than a ship (aircraft, mostly) lands in a different place in each band
+        # and shows up as separated red / green / blue dots. A 30-knot vessel moves ~1 px in that time.
+        parallax_px = self._band_parallax(scene["array"], cx, cy) if hull_len <= 8.0 and not wake["found"] else 0.0
+        airborne = parallax_px >= cfg.parallax_reject_px
+        if airborne:
+            physics = min(physics, 0.2)
+
+        if airborne:
+            target_type = "AIRBORNE_OR_FAST_MOVER"
+        elif occluded:
             target_type = "WAKE_ONLY_CLOUD_OCCLUDED"
         elif wake["found"]:
             target_type = "VESSEL_UNDERWAY"
@@ -474,6 +484,7 @@ class VesselDetector(BasePipeline):
             "kelvin_half_angle_deg": wake["kelvin_half_angle_deg"],
             "estimated_speed_knots": wake["speed_knots"],
             "speed_method": "KELVIN_TRANSVERSE_WAVELENGTH" if wake["speed_knots"] is not None else None,
+            "band_parallax_px": round(parallax_px, 2),
             "peak_z": round(peak_z, 2),
             "integrated_contrast": round(integrated, 4),
             "physics_score": round(physics, 3),
@@ -481,6 +492,29 @@ class VesselDetector(BasePipeline):
             "confidence": round(physics, 3),
             "ais_status": "PENDING_CORRELATION",
         }
+
+    @staticmethod
+    def _band_parallax(reflectance: np.ndarray, cx: float, cy: float, half: int = 10) -> float:
+        """Largest distance (px) between the per-band bright centroids around a compact target."""
+        h, w = reflectance.shape[:2]
+        x0, x1 = max(int(cx) - half, 0), min(int(cx) + half + 1, w)
+        y0, y1 = max(int(cy) - half, 0), min(int(cy) + half + 1, h)
+        win = reflectance[y0:y1, x0:x1]
+        if win.shape[0] < 5 or win.shape[1] < 5:
+            return 0.0
+        yy, xx = np.mgrid[0:win.shape[0], 0:win.shape[1]]
+        centroids = []
+        for b in range(win.shape[2]):
+            band = win[:, :, b]
+            excess = band - np.median(band)
+            peak = float(excess.max())
+            if peak < 0.02:
+                continue
+            wgt = np.clip(excess - 0.5 * peak, 0.0, None)  # only the bright core of this band
+            centroids.append((float((xx * wgt).sum() / wgt.sum()), float((yy * wgt).sum() / wgt.sum())))
+        if len(centroids) < 3:
+            return 0.0
+        return max(math.hypot(a[0] - b[0], a[1] - b[1]) for i, a in enumerate(centroids) for b in centroids[i + 1:])
 
     @staticmethod
     def _principal_axes(xs: np.ndarray, ys: np.ndarray, weights: np.ndarray) -> Tuple[float, float, float]:

@@ -38,6 +38,7 @@ def run_pass(
             "valid_scenes": validator.valid_scenes,
             "rejected_scenes": validator.rejected_scenes,
             "ais_catalog": validator.ais_catalog,
+            "known_structures": validator.known_structures,
             "ingest_stats": ingest,
         }
 

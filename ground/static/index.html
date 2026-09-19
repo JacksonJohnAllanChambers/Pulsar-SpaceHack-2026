@@ -185,8 +185,8 @@
 
 <script>
 const $ = s => document.querySelector(s);
-const COLORS = { DARK_VESSEL: '#ff5f5f', AIS_KINEMATIC_MISMATCH: '#ffb547', CONFIRMED_KNOWN_VESSEL: '#46d6a3' };
-const LABELS = { DARK_VESSEL: 'DARK', AIS_KINEMATIC_MISMATCH: 'MISMATCH', CONFIRMED_KNOWN_VESSEL: 'KNOWN' };
+const COLORS = { DARK_VESSEL: '#ff5f5f', AIS_KINEMATIC_MISMATCH: '#ffb547', CONFIRMED_KNOWN_VESSEL: '#46d6a3', KNOWN_STRUCTURE: '#8fa3b8' };
+const LABELS = { DARK_VESSEL: 'DARK', AIS_KINEMATIC_MISMATCH: 'MISMATCH', CONFIRMED_KNOWN_VESSEL: 'KNOWN', KNOWN_STRUCTURE: 'STRUCTURE' };
 const STAGE_COLORS = ['#4db8ff', '#46d6a3', '#ffb547', '#b78cff', '#ff8ad1', '#8fa3b8'];
 let pass = null, scene = null, selected = null, layer = 'rgb', modelCard = {};
 const view = { s: 1, ox: 0, oy: 0 };
@@ -330,8 +330,14 @@ function drawTarget(t) {
 }
 
 function drawAis() {
+  const matched = new Set(scene.targets.map(id => pass.targetsById[id]).filter(t => t && t.matched_vessel != null).map(t => t.matched_vessel));
+  const ghosts = new Set(pass.ais_not_observed.filter(g => g.scene_id === scene.id && g.reason === 'CLEAR_WATER_NO_TARGET').map(g => g.mmsi));
   (scene.ais || []).forEach(a => {
     const x = X(a.x), y = Y(a.y);
+    if (!matched.has(a.mmsi) && !ghosts.has(a.mmsi)) {   // in port / unresolvable: context only
+      ctx.fillStyle = 'rgba(183,140,255,.55)'; ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
+      return;
+    }
     ctx.strokeStyle = '#b78cff'; ctx.fillStyle = 'rgba(183,140,255,.18)'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(x, y - 7); ctx.lineTo(x + 7, y); ctx.lineTo(x, y + 7); ctx.lineTo(x - 7, y); ctx.closePath(); ctx.fill(); ctx.stroke();
     if (a.sog_knots > 0.5) { const c = a.cog_deg * Math.PI / 180; arrow(x, y, x + Math.sin(c) * 26, y - Math.cos(c) * 26, '#b78cff', 1.3); }
@@ -365,7 +371,9 @@ function renderTargets() {
   if (!pass) return;
   const only = $('#onlyScene').checked && scene;
   const list = pass.targets.filter(t => !only || t.scene_id === scene.id);
-  const ghosts = pass.ais_not_observed.filter(g => !only || g.scene_id === scene.id);
+  const unseen = pass.ais_not_observed.filter(g => !only || g.scene_id === scene.id);
+  const ghosts = unseen.filter(g => g.reason === 'CLEAR_WATER_NO_TARGET');
+  const quiet = unseen.length - ghosts.length;
   $('#tcount').textContent = `(${list.length})`;
   const bar = (label, v) => `<span>${label}</span><div class="bar"><i style="width:${Math.round((v || 0) * 100)}%"></i></div><b>${v == null ? 'n/a' : fmt(v, 2)}</b>`;
   let html = list.map(t => {
@@ -386,6 +394,7 @@ function renderTargets() {
   html += ghosts.map(g => `<div class="tgt" style="cursor:default"><div class="nochip">no optical target</div><div>
       <div class="head"><span class="badge" style="background:var(--ghost)">AIS NOT OBSERVED</span><span class="tid">${g.scene_id}</span></div>
       <div class="note"><b style="color:var(--text)">${g.name}</b> (MMSI ${g.mmsi}) dead-reckons to ${fmt(g.predicted_latitude, 4)}, ${fmt(g.predicted_longitude, 4)} — ${g.reason.replace(/_/g, ' ').toLowerCase()}.</div></div></div>`).join('');
+  if (quiet) html += `<div class="empty">${quiet} further AIS broadcasters are in port / inside the shoreline keep-out or too small for this sensor to resolve; their absence from the image means nothing and they are not downlinked.</div>`;
   $('#targets').innerHTML = html || '<div class="empty">No targets in this scene.</div>';
   document.querySelectorAll('.tgt[data-id]').forEach(el => el.onclick = () => focusTarget(el.dataset.id));
 }
@@ -411,7 +420,7 @@ function renderFooter() {
       <div class="row"><span style="color:var(--dark)">Dark vessels</span><b>${counts('DARK_VESSEL')}</b></div>
       <div class="row"><span style="color:var(--mismatch)">Kinematic mismatch</span><b>${counts('AIS_KINEMATIC_MISMATCH')}</b></div>
       <div class="row"><span style="color:var(--known)">Confirmed known</span><b>${counts('CONFIRMED_KNOWN_VESSEL')}</b></div>
-      <div class="row"><span style="color:var(--ghost)">AIS not observed</span><b>${pass.ais_not_observed.length}</b></div>
+      <div class="row"><span style="color:var(--ghost)">AIS missing in clear water</span><b>${pass.ais_not_observed.filter(g => g.reason === 'CLEAR_WATER_NO_TARGET').length}</b></div>
       <div class="row"><span>Scenes usable / total</span><b>${usable} / ${pass.scenes.length}</b></div></div>
     <div class="card"><h4>Edge budget (Orin NX envelope)</h4><div class="big">${fmt(t.wall_clock_time_s, 2)}<small>s wall clock</small></div>
       <div class="row"><span>Peak RAM</span><b>${fmt(t.peak_memory_mb, 0)} MB / 14 GB</b></div>

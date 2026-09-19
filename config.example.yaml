@@ -55,6 +55,7 @@ ais_correlation:
   gate_growth_fraction: 0.25
   max_heading_delta_deg: 35.0
   speed_tolerance_knots: 6.0
+  max_fix_age_hours: 3.0            # an AIS fix older than this cannot identify a contact
   speed_can_raise_anomaly: false    # speed disagreement alone is advisory, not an anomaly
 
 downlink:

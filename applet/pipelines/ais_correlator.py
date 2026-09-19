@@ -52,6 +52,10 @@ class AISKinematicCorrelator(BasePipeline):
         for di, det in enumerate(detections):
             lat, lon = det["world_coordinates"]["latitude"], det["world_coordinates"]["longitude"]
             for si, (plat, plon) in enumerate(predictions.get(det["scene_id"], [])):
+                # A stale fix is not an identity: found on real data, where yesterday's broadcast from
+                # the same berth "confirmed" a ship that was silent today.
+                if abs(ages[det["scene_id"]][si]) > cfg.max_fix_age_hours:
+                    continue
                 dist = haversine_distance_nm(lat, lon, plat, plon)
                 run_nm = float(catalog[si].get("sog_knots", 0.0)) * abs(ages[det["scene_id"]][si])
                 tight = cfg.tight_gate_nm + cfg.gate_growth_fraction * run_nm
@@ -73,17 +77,24 @@ class AISKinematicCorrelator(BasePipeline):
             det_match[di] = (si, dist, tier)
             used_ships.add((detections[di]["scene_id"], si))
 
+        structures = context.get("known_structures", [])
         for di, det in enumerate(detections):
             if di in det_match:
                 si, dist, tier = det_match[di]
                 self._classify_matched(det, catalog[si], dist, off_track=tier == 1)
+                continue
+            structure = self._nearest_structure(det, structures)
+            if structure is not None:
+                self._classify_structure(det, structure)
             else:
                 self._classify_dark(det)
 
         detections.sort(key=lambda d: (-d["downlink_priority"], d["detection_id"]))
 
         context["classified_targets"] = detections
-        context["ais_not_observed"] = self._unobserved_broadcasters(catalog, predictions, scenes, used_ships)
+        context["ais_not_observed"] = self._unobserved_broadcasters(
+            catalog, predictions, scenes, used_ships, cfg.max_fix_age_hours * 3600.0,
+            self.config.detection.shore_exclusion_m)
         context["ais_predictions"] = {
             sid: [
                 {"mmsi": ship.get("mmsi"), "name": ship.get("name"), "latitude": round(p[0], 6),
@@ -94,7 +105,8 @@ class AISKinematicCorrelator(BasePipeline):
         }
         for key, label in (("dark_vessels_count", "DARK_VESSEL"),
                            ("spoofing_anomalies_count", "AIS_KINEMATIC_MISMATCH"),
-                           ("confirmed_known_count", "CONFIRMED_KNOWN_VESSEL")):
+                           ("confirmed_known_count", "CONFIRMED_KNOWN_VESSEL"),
+                           ("known_structures_count", "KNOWN_STRUCTURE")):
             context[key] = sum(1 for t in detections if t["classification"] == label)
         return context
 
@@ -104,10 +116,12 @@ class AISKinematicCorrelator(BasePipeline):
             delta_h = (shutter - fix_time).total_seconds() / 3600.0
         else:
             delta_h = float(ship.get("delta_hours_to_shutter", self.config.ais_correlation.default_delta_hours))
-        return min(max(delta_h, -6.0), 6.0)  # stale fixes are not extrapolated forever
+        return delta_h
 
     def _predict(self, ship: Dict[str, Any], shutter: Optional[datetime]) -> Tuple[float, float]:
-        delta_h = self._fix_age_hours(ship, shutter)
+        # extrapolation is capped; fixes older than max_fix_age_hours are ignored by the matcher anyway
+        limit = self.config.ais_correlation.max_fix_age_hours
+        delta_h = min(max(self._fix_age_hours(ship, shutter), -limit), limit)
         return project_dead_reckoning(
             float(ship["latitude"]), float(ship["longitude"]),
             float(ship.get("sog_knots", 0.0)), float(ship.get("cog_deg", 0.0)), delta_h,
@@ -138,8 +152,12 @@ class AISKinematicCorrelator(BasePipeline):
                 problems.append(text)
             else:
                 speed_note = f" Advisory: {text}."
-        if det["target_type"] == "VESSEL_UNDERWAY" and sog < 0.5:
-            problems.append(f"visible wake but AIS reports {sog:.1f} kn")
+        # Real berthed ships lie along piers, and a pier reads as a short "wake". Only a long, strong
+        # wake contradicts a transponder that says the ship is stopped.
+        if det["target_type"] == "VESSEL_UNDERWAY" and sog < 0.5 \
+                and det.get("wake_length_m", 0.0) >= cfg.static_mismatch_min_wake_m \
+                and det.get("wake_snr", 0.0) >= cfg.static_mismatch_min_wake_snr:
+            problems.append(f"{det['wake_length_m']:.0f} m wake but AIS reports {sog:.1f} kn")
 
         det["matched_vessel"] = ship.get("mmsi")
         det["matched_vessel_name"] = ship.get("name")
@@ -159,6 +177,22 @@ class AISKinematicCorrelator(BasePipeline):
             )
         det["ais_status"] = "CORRELATED"
 
+    @staticmethod
+    def _nearest_structure(det: Dict[str, Any], structures: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        c = det["world_coordinates"]
+        for st in structures:
+            radius_nm = float(st.get("radius_m", 150.0)) / 1852.0
+            if haversine_distance_nm(c["latitude"], c["longitude"], float(st["latitude"]), float(st["longitude"])) <= radius_nm:
+                return st
+        return None
+
+    @staticmethod
+    def _classify_structure(det: Dict[str, Any], structure: Dict[str, Any]) -> None:
+        """Platforms, artificial islands, moored buoys: bright, ship-sized, never on AIS, never moving."""
+        det.update(matched_vessel=None, matched_vessel_name=structure.get("name"), ais_distance_nm=None,
+                   classification="KNOWN_STRUCTURE", downlink_priority=0.05, ais_status="CHARTED",
+                   intelligence_notes=f"Charted fixed structure: {structure.get('name', 'unnamed')}.")
+
     def _classify_dark(self, det: Dict[str, Any]) -> None:
         cfg = self.config.ais_correlation
         c = det["world_coordinates"]
@@ -174,15 +208,27 @@ class AISKinematicCorrelator(BasePipeline):
         det["ais_status"] = "NO_AIS"
 
     @staticmethod
-    def _unobserved_broadcasters(catalog, predictions, scenes, used_ships) -> List[Dict[str, Any]]:
+    def _unobserved_broadcasters(catalog, predictions, scenes, used_ships, max_age_s: float = 3 * 3600.0,
+                                 shore_exclusion_m: float = 0.0) -> List[Dict[str, Any]]:
+        import cv2
+        import numpy as np
+
         out = []
         for scene_id, preds in predictions.items():
             scene = scenes[scene_id]
             if not scene["quality_metrics"]["is_usable"]:
                 continue
             georef = scene["georef"]
+            shutter = _parse_iso(scene.get("shutter_time"))
+            keepout = scene["land_mask"]
+            if shore_exclusion_m > 0 and keepout.any():
+                k = 2 * max(1, int(round(shore_exclusion_m / georef.gsd_m))) + 1
+                keepout = cv2.dilate(keepout, np.ones((k, k), np.uint8))
             for si, (plat, plon) in enumerate(preds):
                 if (scene_id, si) in used_ships:
+                    continue
+                fix = _parse_iso(catalog[si].get("timestamp"))
+                if shutter is not None and fix is not None and abs((shutter - fix).total_seconds()) > max_age_s:
                     continue
                 x, y = georef.lonlat_to_pixel(plon, plat)
                 if not (0 <= x < georef.width and 0 <= y < georef.height):
@@ -190,10 +236,12 @@ class AISKinematicCorrelator(BasePipeline):
                 xi, yi = int(x), int(y)
                 if scene["cloud_mask"][yi, xi]:
                     reason = "UNDER_CLOUD"
-                elif scene["land_mask"][yi, xi]:
-                    reason = "IN_PORT_OR_LAND_BUFFER"
+                elif keepout[yi, xi]:
+                    reason = "IN_PORT_OR_SHORE_KEEPOUT"  # the detector does not look here, so silence means nothing
+                elif 0 < float(catalog[si].get("length_m") or 0) < 2.5 * georef.gsd_m:
+                    reason = "BELOW_SENSOR_RESOLUTION"  # a 12 m yacht is one mixed pixel at 10 m GSD
                 else:
-                    reason = "CLEAR_WATER_NO_TARGET"
+                    reason = "CLEAR_WATER_NO_TARGET"  # the only reason that suggests a ghost transponder
                 out.append({
                     "scene_id": scene_id, "mmsi": catalog[si].get("mmsi"), "name": catalog[si].get("name"),
                     "predicted_latitude": round(plat, 6), "predicted_longitude": round(plon, 6),

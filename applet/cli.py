@@ -83,7 +83,8 @@ def main():
         print(
             f"\n[SUMMARY] Dark vessels: {context.get('dark_vessels_count', 0)} | "
             f"Kinematic mismatches: {context.get('spoofing_anomalies_count', 0)} | "
-            f"AIS not observed: {len(context.get('ais_not_observed', []))} | "
+            f"AIS missing in clear water: "
+            f"{sum(1 for a in context.get('ais_not_observed', []) if a['reason'] == 'CLEAR_WATER_NO_TARGET')} | "
             f"Tarball: {downlink['downlink_tarball_path']} ({downlink['final_bundle_kb']} KB)\n"
         )
     else:

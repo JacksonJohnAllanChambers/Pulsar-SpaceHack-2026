@@ -64,7 +64,7 @@ def _jsonable(obj: Any) -> Any:
 
 def list_bundles():
     out = []
-    for dirpath, dirnames, filenames in os.walk(DATA_DIR):
+    for dirpath, dirnames, filenames in os.walk(DATA_DIR, followlinks=True):  # data/real may be a symlink
         dirnames[:] = [d for d in dirnames if d not in ("outputs",)]
         if "manifest.json" in filenames:
             out.append(os.path.relpath(dirpath, ROOT).replace("\\", "/"))
