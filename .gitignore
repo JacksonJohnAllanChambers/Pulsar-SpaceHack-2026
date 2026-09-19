@@ -52,9 +52,12 @@ Thumbs.db
 *.bin
 data/outputs/*
 !data/outputs/.gitkeep
-data/eval_bundle/
-data/heldout_bundle/
-data/real/
+# All datasets are rebuilt by `python scripts/setup_data.py` (see docs/SETUP.md). The entries without a
+# trailing slash also match the junctions / symlinks that --data-root creates.
+data/sample_bundle/
+data/eval_bundle
+data/heldout_bundle
+data/real
 
 # The flight model is tiny (59 KB INT8) and must ship with the applet
 !applet/models/*.onnx

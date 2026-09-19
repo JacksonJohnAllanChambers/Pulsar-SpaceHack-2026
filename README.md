@@ -59,6 +59,41 @@ bound: "no AIS vessel" does not mean "no vessel", and several of the alarms are 
 real false alarms are wispy cumulus, whitecaps, shoals and jetties. The published arrays are percentile-stretched
 per product rather than radiometric, so `training/sen2ms.py` re-anchors each chip's water level before use.
 
+**Real AIS against real imagery** (`python training/sen2ms.py bundle`; held-out products, 141 single-vessel
+chips, each ship's true AIS fix dead-reckoned across the real fix-to-shutter gap, every third ship's AIS withheld):
+
+| Real ships the detector found | Outcome |
+| :-- | :-- |
+| 36 with AIS withheld (genuinely "dark" to the applet) | **35 reported DARK_VESSEL**, 1 confirmed |
+| 64 broadcasting honestly | **60 CONFIRMED**, 4 flagged kinematic mismatch |
+| ... of which 47 under way | 4 false accusations (8.5 %): wake heading disagreed with AIS heading by > 35 deg |
+
+Caveat, stated plainly: the published chips have no geotransform, so each is geolocated by pinning its box to the
+AIS position; the *position* match is true by construction. What this measures is the kinematic check and the
+dark-vessel path on real wakes. It also caught a real bug: a day-old fix from the same berth "confirmed" a silent
+ship, so AIS fixes older than `max_fix_age_hours` (3 h) can no longer identify a contact. The five full Sentinel-2
+scenes have no AIS at all (no open archive covers them), so every contact there is reported dark.
+
+**A full real scene with real AIS** (`scripts/fetch_noaa_ais.py`): Sentinel-2 over Los Angeles / Long Beach,
+2024-11-08 18:45 UTC, against that day's public NOAA Marine Cadastre AIS (9 million fixes streamed from the zip,
+276 broadcasters inside the footprint within 20 min of the shutter, median fix age 51 s). Here the geolocation is
+independent of the AIS, so the position match is a real test:
+
+| 43 contacts in 1.2 s | |
+| :-- | :-- |
+| CONFIRMED against a real MMSI | **16**, each 6-100 m from its dead-reckoned AIS position; every anchored 150-240 m ship among them |
+| DARK_VESSEL | 25: almost all small craft under way with clear wakes and no transponder (legal, and exactly what a dark-vessel product should surface); one breakwater tip |
+| AIS_KINEMATIC_MISMATCH | 1: a fireboat in a hard turn (curved wake vs instantaneous COG) |
+| KNOWN_STRUCTURE | 1: a 184 m artificial oil island, matched from the uplinked `known_structures.json` |
+| AIS broadcasters with no contact | 228, of which 226 are in port / inside the shoreline keep-out and **2** are in clear water (the only kind downlinked) |
+| 32 MB raw -> downlink | 11 KB |
+
+That scene drove four fixes, each with a regression test: piers beside berthed ships read as short wakes and
+falsely accused three moored ships ("wake but AIS says stopped" now needs >= 300 m of strong wake); aircraft
+appear as separated red/green/blue dots because the bands are exposed at different instants (now rejected by a
+band-parallax test); "AIS not observed" is only meaningful in clear water for a vessel the sensor can resolve; and
+charted structures need an uplinked list.
+
 The first CNN, trained on synthetic chips only, **rejected 13 of 124 real ships** and accepted coastline
 fragments. Retraining on synthetic + 3 608 mined real chips (train products only) fixed both: zero real ships
 lost on the test products and half the false alarms. That sim-to-real gap is the single most important thing
@@ -82,8 +117,8 @@ thresholds tuned on seed 777, numbers below from **seed 4242, never used in deve
 | Heading error (median / within 10 deg) | | 0.5 deg / 97.6 % |
 | AIS anomaly class correct (dark / mismatch / known) | | 97 % of matched vessels |
 
-Synthetic scenes are the only place the AIS logic can be scored, because no open AIS archive matches the real
-scenes. Misses are dominated by vessels inside the land / cloud keep-outs and wake-less small craft in gales.
+Synthetic scenes are where AIS spoofing (false course, false "at anchor", ghost transponders) can be scored,
+because real spoofers do not come labelled. Misses are dominated by vessels inside the land / cloud keep-outs and wake-less small craft in gales.
 
 ### Verifier (`applet/models/model_card.json`)
 
@@ -109,20 +144,24 @@ The tarball is **byte-identical across runs** (fixed mtimes, ordering and JPEG s
 
 ```bash
 pip install -r requirements-dev.txt
-python scripts/generate_synthetic_data.py            # renders data/sample_bundle (seeded)
+python scripts/setup_data.py                         # synthetic bundles (add --all for the real datasets)
 python -m applet run -i data/sample_bundle -o data/outputs -c config.example.yaml
 python -m ground.server                              # GUI at http://127.0.0.1:8050
 ```
 
+New to the repo? **[docs/SETUP.md](docs/SETUP.md)** walks through install, every dataset (one command, no
+accounts, optional `--data-root` to keep the ~1.5 GB on another drive), reproducing the numbers, retraining and
+the container.
+
 Other tools:
 
 ```bash
-python -m pytest -q                                  # 32 tests: resilience, physics, determinism
+python -m pytest -q                                  # 37 tests: resilience, physics, determinism
 python scripts/evaluate.py -i data/sample_bundle     # precision / recall / heading / AIS accuracy
 python scripts/evaluate.py --no-verifier             # ...what the CNN buys
 python scripts/generate_synthetic_data.py --random 60 --seed 4242 -o data/heldout_bundle
 python scripts/benchmark.py --full-swath             # 4096×4096 timing + memory
-python training/train_verifier.py --scenes 500       # re-mine chips, retrain, export, quantise
+python training/train_verifier.py --scenes 500       # retrain, export, quantise (needs requirements-train.txt)
 ```
 
 ### Ground console
@@ -151,6 +190,7 @@ organisers' prep guide says.
 bundle/
   manifest.json       gsd_meters, reflectance_scale, bands, shutter_time, scenes[{id, file, center_lat/lon | corners}]
   ais_catalog.json    vessels[{mmsi, name, timestamp, latitude, longitude, sog_knots, cog_deg}]
+  known_structures.json   optional: structures[{name, latitude, longitude, radius_m}] (platforms, islands, buoys)
   *.tif | *.npy | *.png   4-band rasters, any bit depth, (H,W,C) or (C,H,W)
 ```
 
@@ -177,6 +217,8 @@ python scripts/fetch_sentinel2.py -o data/real/s2_bundle      # 5 x 20 km Sentin
 python training/sen2ms.py mine                                # real chips from SEN2MS train products
 python training/train_verifier.py --real-npz data/real/sen2ms/train_chips.npz
 python training/sen2ms.py evaluate                            # scorecard on held-out products
+python training/sen2ms.py bundle                              # real chips + their real AIS -> bundle + AIS scorecard
+python scripts/fetch_noaa_ais.py --bundle data/real/s2_ais_bundle   # real AIS for a US scene (NOAA, ~360 MB/day)
 ```
 
 `fetch_sentinel2.py` finds the least cloudy recent scene per area through the public Element84 Earth Search STAC
@@ -209,8 +251,8 @@ applet/            flight code: config, cli, runner, core/ (validator, telemetry
 simulation/        scene renderer (ground-side)
 training/          verifier training, ONNX export, INT8 quantisation
 ground/            FastAPI + single-page console
-scripts/           bundle generator, evaluate, benchmark, container runners
-tests/             32 tests
+scripts/           setup_data (start here), bundle generator, Sentinel-2 / NOAA fetchers, evaluate, benchmark
+tests/             37 tests
 docker/            Dockerfile.arm64
-docs/              hackathon rules, rubric, track notes, pitch template
+docs/              SETUP (collaborators start here), hackathon rules, rubric, track notes, pitch template
 ```
