@@ -216,6 +216,11 @@ border:1px solid var(--line);color:var(--dim);cursor:pointer;user-select:none}
 .v-structure.on{background:var(--struct);color:#160f02;border-color:var(--struct)}
 .v-unsure.on{background:var(--unsure);color:#0d1117;border-color:var(--unsure)}
 .done{opacity:.55}
+#who{background:#222a35;color:var(--fg);border:1px solid var(--line);border-radius:6px;
+padding:6px 9px;font:inherit;font-size:12px;width:120px}
+#sync{font-size:11px;color:var(--dim);min-width:74px}
+#sync.ok{color:var(--vessel)} #sync.pending{color:var(--struct)} #sync.off{color:var(--not)}
+.mine{font-size:9px;color:var(--dim);margin-left:6px}
 nav{padding:8px 16px;background:#12161d;border-bottom:1px solid var(--line);font-size:12px;
 display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 nav a{color:var(--dim);text-decoration:none;border:1px solid var(--line);border-radius:5px;padding:2px 7px}
@@ -228,11 +233,14 @@ nav a.full{border-color:var(--vessel);color:var(--vessel)}
 <div id="bar"><div id="fill"></div></div>
 <div id="count" class="keys"></div>
 <div class="keys"><b>V</b> vessel <b>N</b> not <b>S</b> structure <b>U</b> unsure <b>&larr;&rarr;</b> move</div>
+<input id="who" placeholder="your name" title="recorded with each verdict">
+<span id="sync"></span>
 <button id="dl">Download labels.json</button>
 <button id="clr" class="ghost">Reset</button>
 </header>
 __NAV__
 <main id="grid"></main>
+<script src="config.js"></script>
 <script>
 const ITEMS = __ITEMS__;
 const GRAND_TOTAL = __TOTAL__;
@@ -241,6 +249,71 @@ let labels = {};
 try { labels = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { labels = {}; }
 ITEMS.forEach(it => { if (it.prelabel && !labels[it.id]) labels[it.id] = it.prelabel; });
 let cur = 0;
+
+// ---- shared store -------------------------------------------------------------------
+// Labelling must never block on the network: localStorage is the working copy and the
+// endpoint is a mirror. Verdicts queue, flush in batches, and survive a reload unsent.
+const ENDPOINT = (window.LABEL_ENDPOINT || "").trim();
+const QKEY = "contact_queue_v1", WHOKEY = "contact_labeller";
+const whoBox = document.getElementById("who");
+const syncBox = document.getElementById("sync");
+let queue = [];
+try { queue = JSON.parse(localStorage.getItem(QKEY) || "[]"); } catch (e) { queue = []; }
+whoBox.value = localStorage.getItem(WHOKEY) || "";
+whoBox.oninput = () => localStorage.setItem(WHOKEY, whoBox.value.trim());
+
+let byOther = {};   // id -> labeller, for verdicts that came from the shared store
+function setSync(cls, text) { syncBox.className = cls; syncBox.textContent = text; }
+
+function enqueue(id, verdict) {
+  if (!ENDPOINT) return;
+  queue.push({id, verdict});
+  try { localStorage.setItem(QKEY, JSON.stringify(queue)); } catch (e) {}
+  scheduleFlush();
+}
+
+let flushTimer = null;
+function scheduleFlush() {
+  if (flushTimer) return;
+  setSync("pending", queue.length + " to sync");
+  flushTimer = setTimeout(flush, 1500);
+}
+
+async function flush() {
+  flushTimer = null;
+  if (!ENDPOINT || !queue.length) return;
+  const batch = queue.slice();
+  try {
+    // text/plain keeps this a "simple request", so the browser skips the CORS preflight
+    // that an Apps Script web app cannot answer.
+    await fetch(ENDPOINT, {method: "POST", headers: {"Content-Type": "text/plain;charset=utf-8"},
+                           body: JSON.stringify({labeller: whoBox.value.trim() || "anonymous",
+                                                 verdicts: batch})});
+    queue = queue.slice(batch.length);
+    try { localStorage.setItem(QKEY, JSON.stringify(queue)); } catch (e) {}
+    setSync(queue.length ? "pending" : "ok", queue.length ? queue.length + " to sync" : "synced");
+  } catch (e) {
+    setSync("off", queue.length + " offline");
+    setTimeout(scheduleFlush, 15000);   // keep the verdicts, try again later
+  }
+}
+
+async function pullShared() {
+  if (!ENDPOINT) { setSync("", "local only"); return; }
+  try {
+    const r = await fetch(ENDPOINT, {method: "GET"});
+    const data = await r.json();
+    let added = 0;
+    // Append-only log: later rows win, so replaying in order lands on the newest verdict.
+    for (const row of (data.rows || [])) {
+      if (!row.id) continue;
+      byOther[row.id] = row.labeller;
+      if (labels[row.id] !== row.verdict) { labels[row.id] = row.verdict; added++; }
+    }
+    if (added) paint();
+    setSync(queue.length ? "pending" : "ok", queue.length ? queue.length + " to sync" : "synced");
+  } catch (e) { setSync("off", "offline"); }
+}
 const VERDICTS = ["vessel", "not_vessel", "structure", "unsure"];
 const LBL = {vessel: "VESSEL", not_vessel: "NOT", structure: "STRUCT", unsure: "?"};
 const CAPS = ["RGB close", "NIR close", "RGB wide", "NIR wide"];
@@ -271,6 +344,12 @@ function paint() {
     card.classList.toggle("cur", i === cur);
     card.classList.toggle("done", !!labels[it.id] && i !== cur);
     VERDICTS.forEach(v => card.querySelector(".v-" + v).classList.toggle("on", labels[it.id] === v));
+    const tag = card.querySelector(".mine") || (() => {
+      const s = document.createElement("span"); s.className = "mine";
+      card.querySelector(".hd").appendChild(s); return s;
+    })();
+    const other = byOther[it.id];
+    tag.textContent = other && other !== whoBox.value.trim() ? "by " + other : "";
   });
   const n = ITEMS.filter(it => labels[it.id]).length;
   document.getElementById("fill").style.width = (100 * n / ITEMS.length) + "%";
@@ -283,6 +362,7 @@ function paint() {
 
 function setLabel(i, v) {
   labels[ITEMS[i].id] = v;
+  enqueue(ITEMS[i].id, v);
   if (i === cur && cur < ITEMS.length - 1) cur++;
   paint();
   document.getElementById("c" + cur).scrollIntoView({block: "nearest", behavior: "smooth"});
@@ -311,12 +391,27 @@ document.getElementById("dl").onclick = () => {
   a.download = "labels.json"; a.click();
 };
 document.getElementById("clr").onclick = () => {
-  if (confirm("Clear every verdict, including the AIS-matched pre-labels?")) {
-    labels = {}; cur = 0; paint();
+  if (confirm("Clear every verdict on this browser? Anything already synced stays in the shared sheet.")) {
+    labels = {}; queue = []; cur = 0;
+    try { localStorage.removeItem(QKEY); } catch (e) {}
+    paint();
   }
 };
 paint();
+pullShared();
+setInterval(pullShared, 30000);
+window.addEventListener("online", scheduleFlush);
 </script></body></html>
+"""
+
+
+CONFIG_JS = """// Shared label store for the contact review pages.
+//
+// Deploy scripts/label_server.gs as a Google Apps Script web app (Execute as: Me,
+// Who has access: Anyone), then paste its /exec URL here and commit this file.
+// Leave it empty and the pages still work -- verdicts just stay in your own browser
+// and have to be exported with "Download labels.json".
+window.LABEL_ENDPOINT = "";
 """
 
 
@@ -351,6 +446,14 @@ def main() -> int:
     items = build_items(args.scorecard)
     os.makedirs(args.output, exist_ok=True)
     n_miss = sum(1 for i in items if i["kind"] == "miss")
+
+    # Written once and then left alone: rebuilding the sheets must never wipe the team's endpoint.
+    config = os.path.join(args.output, "config.js")
+    if not os.path.exists(config):
+        with open(config, "w", encoding="utf-8") as f:
+            f.write(CONFIG_JS)
+        print(f"[config] wrote {config} -- paste the Apps Script /exec URL into it "
+              f"(see docs/LABELLING.md); until then the pages label locally only")
 
     if not args.split:
         path = os.path.join(args.output, "contact_sheet.html")
