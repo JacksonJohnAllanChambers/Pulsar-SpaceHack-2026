@@ -156,6 +156,25 @@ def test_labels_give_precision_and_never_assume_the_unlabelled():
     assert out["false_alarms_per_1000km2"] == pytest.approx(10.0)
 
 
+def test_per_scene_precision_splits_by_scene_and_excludes_unsure():
+    """Per-scene precision is how we compare a retrained model on held-out scenes, so it has to
+    attribute each contact to its own scene and leave 'unsure' out of both numerator and denominator."""
+    targets = [
+        make_target("A1", "CONFIRMED_KNOWN_VESSEL", scene="A", matched_vessel=1, ais_distance_nm=0.01),
+        make_target("A2", "DARK_VESSEL", scene="A"),
+        make_target("B1", "DARK_VESSEL", scene="B"),
+        make_target("B2", "DARK_VESSEL", scene="B"),
+        make_target("B3", "DARK_VESSEL", scene="B"),
+    ]
+    labels = {"A2": "not_vessel", "B1": "vessel", "B2": "not_vessel", "B3": "unsure"}
+    scenes = [make_scene("A"), make_scene("B")]
+    rows = {r["scene"]: r for r in score(make_context(targets, scenes=scenes), TELEMETRY, labels)["per_scene"]}
+
+    assert rows["A"]["precision"] == 0.5      # the AIS match counts as a vessel, the dark one does not
+    assert rows["B"]["precision"] == 0.5      # 1 vessel, 1 false alarm, 'unsure' dropped
+    assert rows["B"]["true_vessels"] == 1 and rows["B"]["false_alarms"] == 1
+
+
 def test_labelled_recall_adds_confirmed_unlisted_craft_to_the_truth_set():
     """A reviewer-confirmed vessel with no transponder is a real vessel we did find."""
     targets = [

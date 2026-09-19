@@ -107,6 +107,15 @@ def score(context: Dict[str, Any], telemetry: Dict[str, Any], labels: Optional[D
         cls = det["classification"]
         by_class[cls] = by_class.get(cls, 0) + 1
 
+        if labels is not None:
+            # Per-scene precision: an AIS match is a vessel by transponder, anything else needs
+            # a human verdict, and 'unsure' is excluded rather than guessed either way.
+            verdict = "vessel" if cls in MATCHED else labels.get(det["detection_id"])
+            if verdict == "vessel":
+                row["true_vessels"] = row.get("true_vessels", 0) + 1
+            elif verdict in ("not_vessel", "structure"):
+                row["false_alarms"] = row.get("false_alarms", 0) + 1
+
         if cls == "KNOWN_STRUCTURE":
             row["structure"] += 1
         if cls == "DARK_VESSEL":
@@ -190,6 +199,9 @@ def score(context: Dict[str, Any], telemetry: Dict[str, Any], labels: Optional[D
 
     if labels:
         result["labelled"] = score_labels(targets, labels, water_km2, n_matched, visible_broadcasters)
+        for row in result["per_scene"]:
+            adjudicated = row.get("true_vessels", 0) + row.get("false_alarms", 0)
+            row["precision"] = round(row.get("true_vessels", 0) / adjudicated, 3) if adjudicated else None
     return result
 
 
@@ -229,15 +241,19 @@ def score_labels(targets: List[Dict[str, Any]], labels: Dict[str, str], water_km
 
 def print_report(result: Dict[str, Any]) -> None:
     a = result["ais"]
+    labelled = result.get("labelled") is not None
     print(f"\n{'SCENE':<18}{'water km2':>10}{'cloud%':>8}{'contacts':>10}{'AIS hit':>9}"
-          f"{'dark':>6}{'mismatch':>10}{'AIS missed':>12}{'in port':>9}")
+          f"{'dark':>6}{'mismatch':>10}{'AIS missed':>12}{'in port':>9}"
+          + (f"{'precision':>11}" if labelled else ""))
     for row in result["per_scene"]:
         if not row.get("usable", True):
             print(f"{row['scene']:<18}{'-- unusable scene --':>50}")
             continue
+        prec = row.get("precision")
         print(f"{row['scene']:<18}{row['water_km2']:>10.1f}{row.get('cloud_pct', 0):>8.1f}"
               f"{row['contacts']:>10}{row['matched']:>9}{row['dark']:>6}{row['mismatch']:>10}"
-              f"{row['ais_clear_water_missed']:>12}{row['ais_in_port']:>9}")
+              f"{row['ais_clear_water_missed']:>12}{row['ais_in_port']:>9}"
+              + ((f"{prec:>11.3f}" if prec is not None else f"{'-':>11}") if labelled else ""))
 
     print(f"\n{'=' * 78}\nPOOLED OVER {result['usable_scenes']} USABLE SCENES "
           f"({result['searched_water_km2']:,.0f} km2 of searched water)\n{'=' * 78}")
