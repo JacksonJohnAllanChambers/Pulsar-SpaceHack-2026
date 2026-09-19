@@ -35,6 +35,33 @@ AOIS = [
     ("S2_SINGAPORE", "Singapore Strait eastern anchorage", 104.05, 1.27),
 ]
 
+# US coastal AOIs. These exist so that every scene can be paired with the same day's public NOAA
+# Marine Cadastre AIS (scripts/fetch_noaa_ais.py): the only configuration in which the imagery is
+# geolocated independently of AIS, so a position match is evidence rather than an artefact of how
+# the chip was cut. NOAA publishes Jul-Dec 2024, hence the default date window for this set.
+US_AOIS = [
+    ("S2_LONGBEACH", "Los Angeles / Long Beach outer anchorage", -118.17, 33.68),
+    ("S2_NEWYORK", "New York / Ambrose Channel approaches", -73.95, 40.47),
+    ("S2_NORFOLK", "Chesapeake Bay mouth / Norfolk approaches", -76.02, 36.95),
+    ("S2_GALVESTON", "Galveston / Houston ship channel anchorage", -94.70, 29.30),
+    ("S2_TAMPA", "Tampa Bay approaches", -82.75, 27.60),
+    ("S2_SAVANNAH", "Savannah / Tybee Roads anchorage", -80.80, 31.98),
+    ("S2_CHARLESTON", "Charleston harbour approaches", -79.75, 32.68),
+    ("S2_SANFRANCISCO", "San Francisco Bay approaches / pilot area", -122.60, 37.75),
+    ("S2_PUGETSOUND", "Puget Sound / Admiralty Inlet", -122.60, 48.10),
+    ("S2_MIAMI", "Miami / Fort Lauderdale anchorage", -80.08, 25.75),
+    ("S2_MISSISSIPPI", "Mississippi River delta / Southwest Pass", -89.30, 28.95),
+    ("S2_BOSTON", "Boston harbour approaches", -70.85, 42.33),
+    ("S2_DELAWARE", "Delaware Bay entrance", -75.00, 38.80),
+    ("S2_CORPUS", "Corpus Christi / Aransas Pass anchorage", -97.00, 27.80),
+    ("S2_HONOLULU", "Honolulu harbour approaches", -157.90, 21.28),
+    ("S2_SANDIEGO", "San Diego approaches", -117.25, 32.65),
+]
+
+REGIONS = {"world": AOIS, "us": US_AOIS}
+# NOAA Marine Cadastre AIS coverage: Jul-Dec 2024 (earlier 2024 months and 2025 return 404)
+US_WINDOW = ("2024-07-01", "2024-12-31")
+
 
 def stac_search(lon: float, lat: float, start: str, end: str, max_cloud: float, limit: int = 12):
     body = {
@@ -79,11 +106,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--output", "-o", default="data/real/s2_bundle")
     ap.add_argument("--size", type=int, default=2048, help="window edge in pixels (2048 px = 20.5 km)")
-    ap.add_argument("--start", default="2025-04-01")
-    ap.add_argument("--end", default="2026-09-15")
+    ap.add_argument("--start", default=None)
+    ap.add_argument("--end", default=None)
     ap.add_argument("--max-cloud", type=float, default=5.0)
     ap.add_argument("--only", nargs="*", help="subset of AOI ids")
+    ap.add_argument("--region", choices=sorted(REGIONS), default="world",
+                    help="'us' picks AOIs inside NOAA AIS coverage and defaults to its Jul-Dec 2024 window")
     args = ap.parse_args()
+
+    aois = REGIONS[args.region]
+    default_start, default_end = US_WINDOW if args.region == "us" else ("2025-04-01", "2026-09-15")
+    args.start = args.start or default_start
+    args.end = args.end or default_end
 
     os.environ.setdefault("AWS_NO_SIGN_REQUEST", "YES")
     os.environ.setdefault("GDAL_DISABLE_READDIR_ON_OPEN", "EMPTY_DIR")
@@ -94,7 +128,7 @@ def main():
     out_dir = os.path.abspath(args.output)
     os.makedirs(out_dir, exist_ok=True)
     scenes = []
-    for sid, desc, lon, lat in AOIS:
+    for sid, desc, lon, lat in aois:
         if args.only and sid not in args.only:
             continue
         print(f"[{sid}] searching {desc} ...")
@@ -144,7 +178,7 @@ def main():
     with open(os.path.join(out_dir, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
     with open(os.path.join(out_dir, "ais_catalog.json"), "w", encoding="utf-8") as f:
-        json.dump({"note": "no open AIS archive matches these scenes", "vessels": []}, f, indent=2)
+        json.dump({"note": "no open AIS archive matches these scenes (run scripts/fetch_noaa_ais.py for a --region us bundle)", "vessels": []}, f, indent=2)
     print(f"[DONE] {len(scenes)} scenes written to {out_dir}")
 
 
