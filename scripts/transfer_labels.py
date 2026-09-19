@@ -24,7 +24,13 @@ def transfer(reference, labels, contacts, radius_px):
         if det["detection_id"] in labels:
             by_scene[det["scene_id"]].append(det)
 
-    out, used, stats = {}, set(), collections.Counter()
+    # Verdicts that are not about a contact -- MISS_<scene>_<mmsi>, "this broadcaster had no vessel
+    # under it" -- are keyed by scene and MMSI, so they hold for any run and carry over verbatim.
+    # Dropping them charges every ghost AIS fix to the detector as a miss.
+    contact_ids = {det["detection_id"] for det in reference}
+    out = {k: v for k, v in labels.items() if k not in contact_ids and k.startswith("MISS_")}
+    used, stats = set(), collections.Counter()
+    stats["miss_verdicts_carried"] = len(out)
     # Closest pairs first, each labelled contact claimed at most once
     pairs = []
     for det in contacts:
@@ -39,8 +45,9 @@ def transfer(reference, labels, contacts, radius_px):
         out[new_id] = labels[ref_id]
         used.add(ref_id)
     stats["contacts"] = len(contacts)
-    stats["labels_carried"] = len(out)
-    stats["contacts_without_a_labelled_counterpart"] = len(contacts) - len(out)
+    carried = len(out) - stats["miss_verdicts_carried"]
+    stats["labels_carried"] = carried
+    stats["contacts_without_a_labelled_counterpart"] = len(contacts) - carried
     lost = [r for rs in by_scene.values() for r in rs if r["detection_id"] not in used]
     stats["labelled_vessels_not_redetected"] = sum(labels[r["detection_id"]] == "vessel" for r in lost)
     stats["labelled_clutter_not_redetected"] = sum(labels[r["detection_id"]] in ("not_vessel", "structure") for r in lost)

@@ -64,7 +64,10 @@ class DetectionConfig(BaseModel):
     kelvin_tolerance_deg: float = 6.0
 
     parallax_reject_px: float = 3.0  # band-to-band displacement that marks an aircraft, not a vessel
-    min_physics_score: float = 0.20
+    # 0.20 was tried ("let the CNN rescue borderline candidates"): on the 16 real scenes it found no
+    # extra AIS-confirmed ship and added 13 dark-vessel alerts, ~9 of them visibly jetties, reef surf,
+    # islets and piers; held-out synthetic scores were identical. The CNN passes that clutter at > 0.8.
+    min_physics_score: float = 0.35
     chip_crop_size_px: int = 64
     max_candidates_per_scene: int = 400
 
