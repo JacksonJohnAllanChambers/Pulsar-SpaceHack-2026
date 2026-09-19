@@ -38,6 +38,7 @@ def run_pass(
             memory_path,
             config.ais_correlation.unknown_memory_radius_nm,
             config.ais_correlation.unknown_memory_required_passes,
+            config.ais_correlation.unknown_memory_max_age_days,
         )
 
     with EdgeTelemetryTracker(label=f"{config.mission.mission_name}_{track}") as tracker:
@@ -79,12 +80,16 @@ def run_pass(
         context.setdefault("classified_targets", context.get("detected_vessels", []))
 
         if memory is not None:
-            observations = []
+            # Keyed by the scene's acquisition date, so re-running a bundle teaches it nothing new
+            shutter_dates = {s["id"]: str(s.get("shutter_time") or "")[:10] for s in validator.valid_scenes}
+            by_date: Dict[str, list] = {}
             for target in context["classified_targets"]:
                 if target.get("classification") == "DARK_VESSEL":
                     coordinates = target.get("world_coordinates", {})
-                    observations.append({"latitude": coordinates["latitude"], "longitude": coordinates["longitude"]})
-            memory.record_pass(observations)
+                    by_date.setdefault(shutter_dates.get(target.get("scene_id"), ""), []).append(
+                        {"latitude": coordinates["latitude"], "longitude": coordinates["longitude"]})
+            for observed_on in sorted(by_date):
+                memory.record_pass(by_date[observed_on], observed_on)
             memory.save()
 
         if config.downlink.write_queues:

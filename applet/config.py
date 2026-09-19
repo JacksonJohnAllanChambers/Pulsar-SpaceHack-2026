@@ -89,9 +89,12 @@ class AISCorrelationConfig(BaseModel):
     static_mismatch_min_wake_snr: float = 8.0  # ... at this strength; piers beside berthed ships mimic short wakes
     speed_can_raise_anomaly: bool = False  # speed disagreement alone is advisory until validated on real wakes
     default_delta_hours: float = 0.0
-    unknown_memory_enabled: bool = True
+    # Off unless the uplinked config turns it on: it is state that outlives a pass, and a default
+    # run must be a pure function of its input bundle.
+    unknown_memory_enabled: bool = False
     unknown_memory_radius_nm: float = 0.08
-    unknown_memory_required_passes: int = 3
+    unknown_memory_required_passes: int = 3  # distinct acquisition dates, not runs
+    unknown_memory_max_age_days: float = 180.0  # an area that stops recurring is forgotten
     unknown_memory_path: Optional[str] = None
 
 

@@ -54,6 +54,8 @@ class VesselDetector(BasePipeline):
     def process(self, context: Dict[str, Any]) -> Dict[str, Any]:
         all_detections: List[Dict[str, Any]] = []
         funnel = {"pixels_screened": 0, "cfar_pixels": 0, "candidates": 0, "physics_accepted": 0}
+        if context.get("unknown_memory") is not None:
+            funnel["suppressed_persistent"] = 0
 
         scenes = context.get("screened_scenes", [])
         usable = [s for s in scenes if s["quality_metrics"]["is_usable"]]
@@ -68,6 +70,7 @@ class VesselDetector(BasePipeline):
                 return None
             memory = context.get("unknown_memory")
             if memory is not None:
+                found = len(detections)
                 detections = [
                     detection for detection in detections
                     if not memory.is_suppressed(
@@ -75,6 +78,8 @@ class VesselDetector(BasePipeline):
                         context.get("ais_protected_locations", {}).get(scene["id"], []),
                     )
                 ]
+                # Never silent: what the memory hid is counted in the funnel the operator sees
+                stats["suppressed_persistent"] = found - len(detections)
             for det in detections:
                 chip = self.crop_chip(scene["array"], det["apex_px"], self.config.detection.chip_crop_size_px)
                 det["chip_tensor"] = chip
