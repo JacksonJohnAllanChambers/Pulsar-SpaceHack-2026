@@ -86,6 +86,7 @@ scenes; Boston is a Sentinel-2C commissioning pass with no public L1C. Same mode
 | 15 scenes | L2A (corrected) | **L1C (what the sensor sees)** |
 | :-- | --: | --: |
 | AIS-confirmed ships found | 119 | **119** (116 the same ships, 3 lost, 3 gained) |
+| Recall vs AIS the sensor could see | 0.908 (119 / 131) | **0.902** (119 / 132) |
 | Position error / heading error, median | 46.3 m / 4.8 deg | 46.3 m / 5.4 deg |
 | Contacts | 347 | 372 |
 | Precision on adjudicated contacts | 0.715 (24 unlabelled) | 0.727 (57 unlabelled) |
@@ -98,6 +99,18 @@ in Tampa Bay -- and those new contacts have no labelled counterpart, so true L1C
 between 0.62 and 0.73. The land mask also shrinks by ~0.7 % (haze lifts green more than NIR, so NDWI
 rises along shorelines). A per-scene dark-object subtraction recovers most of the clutter (Tampa
 51 -> 38, contacts 343) but in its naive form costs 4 confirmed ships, so it is not enabled.
+
+### Persistent-clutter memory (optional, off by default)
+
+Sandbars, jetties and reef surf do not move; ships do. With `ais_correlation.unknown_memory_enabled: true`
+the applet remembers where it reported a no-AIS contact and, once the same ~150 m spot has produced one
+on **three distinct acquisition dates**, stops reporting it -- unless AIS predicts a ship there, which
+always wins. It counts dates, not runs, so re-processing a bundle changes nothing and the downlink stays
+byte-identical (tested over five runs); entries expire after 180 days without a sighting; and what it
+hid is counted in the funnel as `suppressed_persistent`, never dropped silently. It is off by default
+because it is state that outlives a pass, and no bundle we hold revisits one place on three dates, so
+its effect on precision is **not yet measured**. Known cost: a dark vessel anchored in one spot across
+three dates would be suppressed too.
 
 ### Real chips (SEN2MS, 10 m)
 
@@ -293,7 +306,7 @@ the container.
 Other tools:
 
 ```bash
-python -m pytest -q                                  # 59 tests: resilience, physics, determinism, flight-image closure
+python -m pytest -q                                  # 67 tests: resilience, physics, determinism, flight-image closure
 python scripts/evaluate.py -i data/sample_bundle     # precision / recall / heading / AIS accuracy
 python scripts/evaluate.py --no-verifier             # ...what the CNN buys
 python scripts/generate_synthetic_data.py --random 60 --seed 4242 -o data/heldout_bundle
@@ -447,7 +460,7 @@ simulation/        scene renderer (ground-side)
 training/          verifier training, ONNX export, INT8 quantisation
 ground/            FastAPI + single-page console
 scripts/           setup_data (start here), bundle generator, Sentinel-2 / NOAA fetchers, evaluate, benchmark
-tests/             59 tests
+tests/             67 tests
 docker/            Dockerfile.arm64
 docs/              SETUP (collaborators start here), hackathon rules, rubric, track notes, pitch template
 ```
