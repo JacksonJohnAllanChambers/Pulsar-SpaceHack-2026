@@ -1,0 +1,13 @@
+.git
+.pytest_cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.tar.gz
+*.zip
+data/outputs/*
+!data/outputs/.gitkeep
+.venv
+env/
+venv/
