@@ -199,9 +199,15 @@ enough on aarch64 — not as the flight figure. What it does establish is that n
 x86: same ONNX graph, same OpenCV calls, same answers.
 
 **Bit-exact across architectures.** The same input bundle produces a downlink tarball with the *same
-SHA-256* on x86-64 Windows and ARM64 macOS — `eacda3b0dd9a64…` — including JPEG encoding and INT8 ONNX
-inference, and every scorecard metric matches to the digit (recall 0.912, precision 0.693, position
-error 46.3 m). Reproducibility is usually claimed across runs; this holds across instruction sets.
+SHA-256* — `eacda3b0dd9a64…` — on x86-64 Windows (Python 3.11), native ARM64 macOS (3.9.6) and inside the
+linux/arm64 flight container (3.10.12, different numpy / OpenCV / ONNX Runtime builds), including JPEG
+encoding and INT8 inference. Every scorecard metric matches to the digit (recall 0.912, precision 0.693,
+position error 46.3 m). Reproducibility is usually claimed across runs; this holds across instruction sets,
+operating systems and library versions.
+
+And in the judges' own container (`--memory=14g --memory-swap=14g --cpus=6 --network none`, Ubuntu 22.04
+aarch64, native on an M4 host): the 16 real scenes take **5.33 s** and peak at **2,603 MB — 18.2 % of the
+14 GB cap**.
 
 ### Duty cycle: what a day in orbit actually asks of it
 
@@ -286,12 +292,39 @@ be shown live. No CDN or internet resources are used.
 ```
 
 Builds `docker/Dockerfile.arm64` (Ubuntu 22.04 / aarch64 / Python 3.10, flight requirements only, versions
-pinned in `docker/constraints.txt`) and runs it
-with `--memory=14g --memory-swap=14g --cpus=6 --network none`. On Apple Silicon this is native ARM64 and is
-the right place to take timing numbers; under QEMU on x86 it is a does-it-fit check only, exactly as the
-organisers' prep guide says. Nobody on the team has Docker on an ARM64 host, so the image is built and started
-under QEMU by CI (`.github/workflows/tests.yml`), and `tests/test_flight_image.py` stages exactly the files the
-Dockerfile copies and runs a pass from them, so flight code cannot import something the image does not ship.
+pinned in `docker/constraints.txt`) and runs it with the prep guide's limits verbatim:
+`--memory=14g --memory-swap=14g --cpus=6 --network none`.
+
+**This has been run, not just written.** On an Apple Silicon host the image is native ARM64 — a VM, not QEMU —
+so it is also the one place a container timing means anything. What the container reports about itself:
+
+```
+arch aarch64 | Ubuntu 22.04.5 LTS | Python 3.10.12 | 6 cores | 14 GB cgroup limit | 0 network interfaces
+numpy 2.2.6  cv2 4.13.0  onnxruntime 1.20.1
+```
+
+| Inside the judges' container (M4 host) | |
+| :-- | --: |
+| Synthetic sample bundle, whole pass | 2.5 s |
+| 16 real Sentinel-2 scenes, 5,669 km² | **5.33 s** |
+| Peak RSS against the cap | **2,603 MB = 18.2 % of 14 GB** |
+| Image build | 29 s native; ~6 min for the same build under QEMU in CI |
+
+The container is ~1.8× slower than the same code run natively on macOS (5.33 s vs 3.03 s) — different Python
+and library builds, plus a virtiofs mount for the imagery. Both are honest; the container is the one the rules
+ask for.
+
+**Byte-identical across all three environments.** The same bundle produces a downlink tarball with the same
+SHA-256 — `eacda3b0dd9a64…` — on x86-64 Windows (Python 3.11), native macOS arm64 (3.9.6) and inside the
+linux/arm64 container (3.10.12), across different numpy, OpenCV and ONNX Runtime versions, and every scorecard
+metric matches to the digit.
+
+CI (`.github/workflows/tests.yml`) builds and starts the same image under QEMU on every push, and
+`tests/test_flight_image.py` stages exactly the files the Dockerfile copies and runs a pass from them — so
+flight code cannot import something the image does not ship. That test exists because it already happened:
+`applet.runner` imported `src.pyFlows.process`, which the Dockerfile never copied, and the image died with
+`ModuleNotFoundError` before reading a pixel. A native run could not have caught it, because native ships the
+whole tree. That is exactly what the prep guide means by "catching things that break".
 
 ## Input bundle
 
