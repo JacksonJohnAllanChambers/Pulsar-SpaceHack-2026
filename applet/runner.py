@@ -61,9 +61,15 @@ def run_pass(
                     # configured queue belongs to whatever scheduler is draining it: leave it alone.
                     queue_dir = os.path.join(output_dir, "queues")
                     shutil.rmtree(queue_dir, ignore_errors=True)
-                route_classified_targets(
-                    context.get("screened_scenes", []), context["classified_targets"], queue_dir
-                )
+                try:
+                    route_classified_targets(
+                        context.get("screened_scenes", []), context["classified_targets"], queue_dir
+                    )
+                except (OSError, ValueError) as e:
+                    # The crops are a convenience for the file-queue scheduler; the tarball is the
+                    # product. A full disk or an over-long path must not cost the pass its downlink.
+                    context["queue_error"] = f"{type(e).__name__}: {e}"
+                    log(f"[WARN] queue crops not written: {context['queue_error']}")
 
         if not keep_rasters:
             # Free the big arrays before packaging; onboard nothing downstream needs them
@@ -84,5 +90,7 @@ def run_pass(
     telemetry = tracker.get_summary()
     telemetry["verifier"] = context.get("verifier_info", {})
     telemetry["funnel"] = context.get("detection_funnel", {})
+    if context.get("queue_error"):
+        telemetry["queue_error"] = context["queue_error"]
     DownlinkPackager.write_telemetry(downlink["telemetry_path"], telemetry)
     return context, telemetry, downlink

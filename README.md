@@ -74,6 +74,31 @@ teaches another's. Every scene improved or held; none got worse. The mechanism i
 the old verifier gave vessels 0.999 and clutter 0.985, so at its 0.80 threshold it rejected nothing. The
 retrained one puts clutter at 0.606 (AUC 0.744 → 0.920 on held-out chips).
 
+### The same scenes without atmospheric correction (L1C)
+
+L2A imagery is corrected on the ground with compute a satellite does not have; the sensor sees
+top-of-atmosphere radiance, i.e. the same scene plus haze (here +0.08 reflectance in blue, +0.01 in NIR).
+`scripts/fetch_sentinel2_l1c.py` fetches the uncorrected L1C product of the *same acquisitions*, cut
+from the identical pixel window (NIR correlation with L2A 0.935-0.9998), so the AIS, the geolocation
+and -- via `scripts/transfer_labels.py`, by position -- the hand labels all carry over. 15 of the 16
+scenes; Boston is a Sentinel-2C commissioning pass with no public L1C. Same model, same config:
+
+| 15 scenes | L2A (corrected) | **L1C (what the sensor sees)** |
+| :-- | --: | --: |
+| AIS-confirmed ships found | 119 | **119** (116 the same ships, 3 lost, 3 gained) |
+| Position error / heading error, median | 46.3 m / 4.8 deg | 46.3 m / 5.4 deg |
+| Contacts | 347 | 372 |
+| Precision on adjudicated contacts | 0.715 (24 unlabelled) | 0.727 (57 unlabelled) |
+| ... if every unlabelled contact is a false alarm | 0.666 | 0.616 |
+| Tampa Bay contacts (turbid, shallow) | 32 | 51 |
+
+Vessel detection is unaffected: the detector is a local-contrast test in NIR, the band the atmosphere
+touches least. What haze costs is clutter in shallow turbid water -- 19 of the 25 extra contacts are
+in Tampa Bay -- and those new contacts have no labelled counterpart, so true L1C precision lies
+between 0.62 and 0.73. The land mask also shrinks by ~0.7 % (haze lifts green more than NIR, so NDWI
+rises along shorelines). A per-scene dark-object subtraction recovers most of the clutter (Tampa
+51 -> 38, contacts 343) but in its naive form costs 4 confirmed ships, so it is not enabled.
+
 ### Real chips (SEN2MS, 10 m)
 
 Scored on **SEN2MS Vessel BBoxes** (Dalhousie, CC-BY-4.0): real Sentinel-2 chips whose vessel boxes were
@@ -387,6 +412,8 @@ RGB, no NIR) is a candidate second source of real hard negatives.
 
 ## Honest limitations
 
+* The verifier has never been trained on uncorrected (L1C) imagery. Vessel detection holds on it, but
+  shallow-water clutter rises and those extra contacts are not yet adjudicated (see the L1C table).
 * Real-image validation is at 10 m (Sentinel-2), not the 4.75 m target GSD. Real false alarms (thin cloud,
   whitecaps, shoals, jetties) are still ~19 per 1000 km2 after retraining, down from ~50.
 * **Shallow turbid water is the worst case and remains so.** Precision ranges from 0.93 in Puget Sound to 0.47
