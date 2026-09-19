@@ -30,6 +30,20 @@
   .btn.primary { background: var(--accent); border-color: var(--accent); color: #04121d; font-weight: 600; padding: 6px 16px; }
   .btn.primary:disabled { opacity: .5; cursor: wait; }
   .spacer { flex: 1; }
+  .mission-flow { flex-basis: 100%; display: flex; align-items: center; gap: 0; padding: 4px 2px 1px; overflow: hidden; }
+  .flow-stage { display: flex; align-items: center; min-width: 0; color: var(--mute); }
+  .flow-node { width: 25px; height: 25px; border: 1px solid var(--line); border-radius: 50%; display: grid; place-items: center;
+    font: 600 10px var(--mono); color: var(--mute); background: var(--panel2); transition: all .25s ease; }
+  .flow-label { margin-left: 6px; font-size: 10.5px; white-space: nowrap; }
+  .flow-link { width: clamp(18px, 5vw, 70px); height: 2px; margin: 0 8px; background: var(--line); position: relative; overflow: hidden; }
+  .flow-link::after { content: ""; position: absolute; inset: 0 auto 0 -100%; width: 55%; background: var(--accent); }
+  .flow-stage.active .flow-node { border-color: var(--accent); color: #04121d; background: var(--accent); box-shadow: 0 0 16px rgba(77,184,255,.55); transform: scale(1.08); }
+  .flow-stage.done .flow-node { border-color: var(--known); color: #061a15; background: var(--known); }
+  .flow-stage.active + .flow-link::after { animation: dataPulse 1s linear infinite; }
+  .flow-stage.done + .flow-link::after { left: 0; width: 100%; background: var(--known); }
+  .flow-status { margin-left: auto; color: var(--mute); font: 10.5px var(--mono); white-space: nowrap; }
+  @keyframes dataPulse { to { left: 180%; } }
+  @media (max-width: 900px) { .mission-flow { order: 10; overflow-x: auto; padding-bottom: 4px; } .flow-label { display: none; } .flow-status { display: none; } }
 
   aside { background: var(--panel); overflow-y: auto; min-height: 0; }
   aside.left { border-right: 1px solid var(--line); }
@@ -139,6 +153,15 @@
 <div class="app">
   <header>
     <div class="brand"><b>TACTICAL EDGE SENTINEL</b><span>ground console &middot; runs the onboard applet unmodified</span></div>
+    <div class="mission-flow" id="missionFlow" aria-label="Pipeline progress">
+      <div class="flow-stage" data-flow="0"><i class="flow-node">01</i><span class="flow-label">INGEST</span></div><i class="flow-link"></i>
+      <div class="flow-stage" data-flow="1"><i class="flow-node">02</i><span class="flow-label">SCREEN</span></div><i class="flow-link"></i>
+      <div class="flow-stage" data-flow="2"><i class="flow-node">03</i><span class="flow-label">DETECT</span></div><i class="flow-link"></i>
+      <div class="flow-stage" data-flow="3"><i class="flow-node">04</i><span class="flow-label">VERIFY</span></div><i class="flow-link"></i>
+      <div class="flow-stage" data-flow="4"><i class="flow-node">05</i><span class="flow-label">CORRELATE</span></div><i class="flow-link"></i>
+      <div class="flow-stage" data-flow="5"><i class="flow-node">06</i><span class="flow-label">DOWNLINK</span></div>
+      <span class="flow-status" id="flowStatus">READY</span>
+    </div>
     <div class="ctl">Bundle <select id="bundle"></select></div>
     <div class="ctl" title="CFAR threshold: NIR pixel must exceed the local sea background by k sigma">CFAR k&sigma;
       <input type="range" id="k" min="3" max="10" step="0.5" value="5"><output id="kOut">5.0</output></div>
@@ -222,6 +245,7 @@ async function init() {
 async function runPass() {
   const btn = $('#run');
   btn.disabled = true; btn.textContent = 'Running…';
+  animateFlow();
   try {
     const r = await fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bundle: $('#bundle').value, cfar_k_sigma: +$('#k').value, min_physics_score: +$('#phys').value,
@@ -236,8 +260,33 @@ async function runPass() {
     renderScenes(); renderFooter();
     selectScene(pass.scenes.find(s => s.id === keep) || pass.scenes.find(s => s.targets.length) || pass.scenes[0], true);
     await dispatchFleetAlerts();
+    finishFlow(pass.targets.length);
   } catch (e) { alert('Pass failed: ' + e.message); }
   btn.disabled = false; btn.textContent = 'Run pass';
+}
+
+let flowTimer = null;
+function setFlow(index, status) {
+  document.querySelectorAll('[data-flow]').forEach((node, i) => {
+    node.classList.toggle('active', i === index);
+    node.classList.toggle('done', i < index);
+  });
+  $('#flowStatus').textContent = status;
+}
+function animateFlow() {
+  clearInterval(flowTimer);
+  let index = 0;
+  const names = ['INGESTING', 'SCREENING', 'DETECTING', 'VERIFYING', 'CORRELATING', 'PACKAGING'];
+  setFlow(index, names[index]);
+  flowTimer = setInterval(() => {
+    index = Math.min(index + 1, names.length - 1);
+    setFlow(index, names[index]);
+    if (index === names.length - 1) clearInterval(flowTimer);
+  }, 650);
+}
+function finishFlow(targets) {
+  clearInterval(flowTimer);
+  setFlow(6, `${targets} TARGETS DOWNLINKED`);
 }
 
 async function refreshFleetAlerts() {

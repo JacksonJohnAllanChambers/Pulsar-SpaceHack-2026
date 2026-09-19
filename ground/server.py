@@ -214,6 +214,11 @@ def transfer_index():
     return FileResponse(os.path.join(STATIC_DIR, "transfer.html"), headers={"Cache-Control": "no-store"})
 
 
+@app.get("/explainer")
+def explainer():
+    return FileResponse(os.path.join(STATIC_DIR, "explainer.html"), headers={"Cache-Control": "no-store"})
+
+
 @app.get("/api/bundles")
 def bundles():
     return {"bundles": list_bundles()}
