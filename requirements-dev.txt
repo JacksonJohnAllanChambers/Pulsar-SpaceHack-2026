@@ -8,3 +8,5 @@ uvicorn>=0.27.0
 torch>=2.2.0
 onnx>=1.15.0
 onnxscript>=0.1.0
+# scripts/fetch_sentinel2.py only (windowed reads of public Sentinel-2 COGs)
+rasterio>=1.3.0
