@@ -180,15 +180,28 @@ which is exactly what fixing an out-of-distribution failure looks like. Reproduc
 
 ### Edge budget
 
-Native x86 dev box -- *not* a Jetson timing claim; see `scripts/benchmark.py`:
+Measured on **native ARM64** (Apple M4, 6 threads via `OMP_NUM_THREADS` to mirror the judges'
+`--cpus=6`) and on an x86-64 dev box. `scripts/run_on_macmini.sh --native` reproduces the ARM64 column
+over a tailnet; `scripts/benchmark.py` the rest.
 
-| Bundle | Wall clock | Peak RAM | Raw -> downlink |
-| :-- | --: | --: | --: |
-| 6 x 1024^2 synthetic scenes | 0.9 s | 0.41 GB (2.9 % of 14 GB) | 54 MB -> 6.8 KB (8 000x) |
-| + one 4096^2 full swath | 7.2 s | 1.43 GB (10 % of 14 GB) | 182 MB -> 14 KB (13 000x) |
-| 5 x 2048^2 real Sentinel-2 scenes | 3.3 s | 1.2 GB (8.3 % of 14 GB) | 160 MB -> 54 KB incl. 180 target chips (2 900x) |
+| Workload | ARM64 (M4, 6 threads) | x86-64 dev box | Peak RAM (ARM64) | Raw -> downlink |
+| :-- | --: | --: | --: | --: |
+| One 4096² full swath (23.1 Mpx, 19.4 km) | **1.61 s** ±0.02 | 7.2 s | 2.09 GB (14.6 % of 14 GB) | 182 MB -> 9.4 KB (19 900x) |
+| 16 × 2048² real Sentinel-2 scenes, 5 669 km² | **3.03 s** | 10.4 s | 2.59 GB (18 % of 14 GB) | 316 MB -> 11 KB |
+| Full test suite | **2.3 s** | 8.0 s | | |
 
-The tarball is **byte-identical across runs** (fixed mtimes, ordering and JPEG stretch) -- tested.
+Per stage on the full swath: detector 0.83 s, screener 0.38 s, ingest 0.27 s, **CNN 0.085 s**, AIS
+0.029 s, packaging 0.004 s. Only 2.24 of 6 cores are busy, so there is headroom we have not spent.
+
+**This is not a Jetson prediction.** An M4 is far quicker than an Orin NX's Cortex-A78AE cores, so treat
+the ARM64 column as an upper bound on ARM performance and a proof that the code is correct and fast
+enough on aarch64 — not as the flight figure. What it does establish is that nothing here depends on
+x86: same ONNX graph, same OpenCV calls, same answers.
+
+**Bit-exact across architectures.** The same input bundle produces a downlink tarball with the *same
+SHA-256* on x86-64 Windows and ARM64 macOS — `eacda3b0dd9a64…` — including JPEG encoding and INT8 ONNX
+inference, and every scorecard metric matches to the digit (recall 0.912, precision 0.693, position
+error 46.3 m). Reproducibility is usually claimed across runs; this holds across instruction sets.
 
 ## Quick start
 
