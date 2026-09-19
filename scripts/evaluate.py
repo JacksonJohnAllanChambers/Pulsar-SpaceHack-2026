@@ -34,6 +34,9 @@ def ang_diff(a: float, b: float) -> float:
 def score_bundle(input_dir: str, config: AppletConfig, verbose: bool = True) -> Dict[str, Any]:
     with open(os.path.join(input_dir, "manifest.json"), "r", encoding="utf-8") as f:
         manifest = json.load(f)
+    # Evaluation runs are independent measurements; persistent unknown-area suppression belongs
+    # to repeated operational passes and would otherwise leak state between benchmark runs.
+    config.ais_correlation.unknown_memory_enabled = False
     with tempfile.TemporaryDirectory() as out_dir:
         context, telemetry, _ = run_pass(input_dir, out_dir, config)
     return score_context(manifest, context, telemetry, config.mission.gsd_meters, verbose)

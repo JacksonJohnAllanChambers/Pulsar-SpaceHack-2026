@@ -260,6 +260,8 @@ class VesselDetector(BasePipeline):
 
         detections: List[Dict[str, Any]] = []
         for det in analysed:
+            if det["target_type"] == "AIRBORNE_OR_FAST_MOVER":
+                continue
             if det["physics_score"] < cfg.min_physics_score:
                 continue
             strong_wake = det["target_type"] == "VESSEL_UNDERWAY" and det["wake_snr"] >= 8.0 \
