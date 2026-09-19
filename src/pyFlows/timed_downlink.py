@@ -50,7 +50,7 @@ def run(base_dir, poll_interval=1):
     priority_queue_dir = base_dir / "downlink" / "queues" / "priority"
     less_priority_queue_dir = base_dir / "downlink" / "queues" / "nonPriority"
     no_ship_detected_dir = base_dir / "noShipDetected"
-    sent_dir = base_dir / "downlink" / "imgDownlink"
+    sent_dir = base_dir / "sent"
     priority_queue_dir.mkdir(parents=True, exist_ok=True)
     less_priority_queue_dir.mkdir(parents=True, exist_ok=True)
     no_ship_detected_dir.mkdir(parents=True, exist_ok=True)

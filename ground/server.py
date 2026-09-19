@@ -29,11 +29,15 @@ sys.path.insert(0, ROOT)
 from applet.config import AppletConfig  # noqa: E402
 from applet.runner import run_pass  # noqa: E402
 from applet.core.exceptions import InvalidManifestError  # noqa: E402
+from ground.fleets import FLEETS, dispatch_sent_alerts, load_alerts  # noqa: E402
 from scripts.evaluate import score_context  # noqa: E402
 
 DATA_DIR = os.path.join(ROOT, "data")
 OUTPUT_DIR = os.path.join(DATA_DIR, "outputs", "gui")
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+SENT_DIR = os.path.join(ROOT, "src", "sent")
+FLEET_ALERT_PATH = os.path.join(DATA_DIR, "outputs", "fleet_alerts.json")
+FLEET_OUTPUT_DIR = os.path.join(ROOT, "src", "fleet_alerts")
 MAX_LAYER_PX = 2048
 
 app = FastAPI(title="Tactical Edge Sentinel - Ground Console")
@@ -79,6 +83,28 @@ def index():
 @app.get("/api/bundles")
 def bundles():
     return {"bundles": list_bundles()}
+
+
+@app.get("/api/fleet-alerts")
+def fleet_alerts():
+    return {"fleets": FLEETS, "alerts": load_alerts(FLEET_ALERT_PATH)}
+
+
+@app.post("/api/fleet-alerts/dispatch")
+def dispatch_fleet_alerts():
+    with _lock:
+        dispatched = dispatch_sent_alerts(SENT_DIR, FLEET_ALERT_PATH, FLEET_OUTPUT_DIR)
+        return {"fleets": FLEETS, "dispatched": dispatched, "alerts": load_alerts(FLEET_ALERT_PATH)}
+
+
+@app.get("/api/sent/{filename}")
+def sent_image(filename: str):
+    if os.path.basename(filename) != filename:
+        raise HTTPException(400, "invalid filename")
+    path = os.path.join(SENT_DIR, filename)
+    if not os.path.isfile(path):
+        raise HTTPException(404, "sent image not found")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @app.post("/api/run")

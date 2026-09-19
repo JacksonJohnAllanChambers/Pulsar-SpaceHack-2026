@@ -45,3 +45,14 @@ def test_route_classified_targets_uses_source_scenes(tmp_path):
     outputs = process.route_classified_targets([scene], [detection], tmp_path / "queues")
 
     assert outputs == [tmp_path / "queues" / "priority" / "SCENE_01_T001.jpg"]
+
+
+def test_dark_vessel_crop_filename_carries_alert_coordinates(tmp_path):
+    image = np.full((200, 200, 4), 80, dtype=np.uint8)
+    target = {"detection_id": "S2_LONGBEACH_T001", "scene_id": "S2_LONGBEACH", "apex_px": [100, 100],
+              "hull_length_m": 30, "matched_vessel": None, "classification": "DARK_VESSEL",
+              "world_coordinates": {"latitude": 33.68, "longitude": -118.17}}
+
+    outputs = process.write_vessel_crops(image, [target], tmp_path / "priority", tmp_path / "nonPriority", 10.0)
+
+    assert outputs[0].name == "alert-v1__S2_LONGBEACH_T001__S2_LONGBEACH__lat-33.680000__lon--118.170000__DARK_VESSEL.jpg"

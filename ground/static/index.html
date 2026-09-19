@@ -90,6 +90,14 @@
   .bars b { font-family: var(--mono); font-weight: 500; color: var(--text); text-align: right; }
   .note { color: var(--mute); font-size: 11.5px; margin-top: 5px; }
   .empty { padding: 18px 12px; color: var(--mute); }
+  .fleet-alert { padding: 5px 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: 42px 1fr; gap: 7px; }
+  .fleet-alert img { width: 42px; height: 42px; object-fit: cover; image-rendering: pixelated; border: 1px solid var(--line); border-radius: 3px; background: #000; }
+  .fleet-alert b { display: block; color: var(--text); font-size: 11.5px; }
+  .fleet-alert span { color: var(--mute); font-family: var(--mono); font-size: 10.5px; }
+  .fleet-section { border-bottom: 1px solid var(--line); }
+  .fleet-section h4 { margin: 0; padding: 9px 12px 4px; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--mute); font-weight: 600; }
+  .fleet-section .row { padding: 0 12px 5px; }
+  .fleet-section .fleet-alert { padding: 7px 12px; }
 
   footer { grid-column: 1 / -1; background: var(--panel); border-top: 1px solid var(--line); display: grid;
     grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0; max-height: 190px; }
@@ -177,6 +185,11 @@
   <aside class="right">
     <div class="sec-title"><span>Downlink queue <span id="tcount"></span></span>
       <label style="text-transform:none;letter-spacing:0"><input type="checkbox" id="onlyScene" checked> this scene</label></div>
+    <section class="fleet-section">
+      <h4>Fleet alerts <span id="fleetCount">0</span></h4>
+      <div class="row"><span id="fleetRoster">Fleet status loading...</span></div>
+      <div id="fleetAlerts"></div>
+    </section>
     <div id="targets"><div class="empty">Targets appear here in downlink priority order.</div></div>
   </aside>
 
@@ -201,6 +214,7 @@ async function init() {
   $('#bundle').innerHTML = b.bundles.map(x => `<option ${x.endsWith('sample_bundle') ? 'selected' : ''}>${x}</option>`).join('')
     || '<option value="">(no bundles under data/)</option>';
   modelCard = await (await fetch('/api/model_card')).json();
+  await refreshFleetAlerts();
   resize();
 }
 
@@ -220,8 +234,37 @@ async function runPass() {
     $('#banner').style.display = 'none';
     renderScenes(); renderFooter();
     selectScene(pass.scenes.find(s => s.id === keep) || pass.scenes.find(s => s.targets.length) || pass.scenes[0], true);
+    await dispatchFleetAlerts();
   } catch (e) { alert('Pass failed: ' + e.message); }
   btn.disabled = false; btn.textContent = 'Run pass';
+}
+
+async function refreshFleetAlerts() {
+  try {
+    const fleetState = await (await fetch('/api/fleet-alerts')).json();
+    renderFleetAlerts(fleetState);
+  } catch (_) { /* Ground-console alerts are optional to the pass viewer. */ }
+}
+
+async function dispatchFleetAlerts() {
+  try {
+    const fleetState = await (await fetch('/api/fleet-alerts/dispatch', { method: 'POST' })).json();
+    renderFleetAlerts(fleetState);
+  } catch (_) { /* The pass remains usable when no sent-folder dispatcher is running. */ }
+}
+
+function renderFleetAlerts(fleetState) {
+  const holder = $('#fleetAlerts');
+  if (!holder) return;
+  const alerts = (fleetState.alerts || []).slice().reverse();
+  const fleets = fleetState.fleets || [];
+  $('#fleetCount').textContent = alerts.length;
+  $('#fleetRoster').textContent = `${fleets.length} fleets ready`;
+  holder.innerHTML = alerts.slice(0, 2).map(alert => `<div class="fleet-alert">
+      <img src="/api/sent/${encodeURIComponent(alert.source_filename)}" alt="${alert.detection_id} crop">
+      <div><b>${alert.fleet.name}</b><span>${alert.detection_id} · ${fmt(alert.distance_nm, 1)} NM away</span>
+        <div class="note">${fmt(alert.latitude, 4)}, ${fmt(alert.longitude, 4)} · dark vessel</div></div>
+    </div>`).join('') || '<div class="row"><span>No delivered dark-vessel alerts.</span></div>';
 }
 
 function renderScenes() {
@@ -494,6 +537,7 @@ $('#onlyScene').addEventListener('change', renderTargets);
 $('#fit').onclick = fit; $('#run').onclick = runPass;
 new ResizeObserver(resize).observe($('#main'));
 init();
+setInterval(dispatchFleetAlerts, 5000);
 </script>
 </body>
 </html>

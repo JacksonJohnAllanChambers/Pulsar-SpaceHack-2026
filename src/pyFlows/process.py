@@ -47,6 +47,21 @@ def destination_for_detection(detection: Dict[str, Any], priority_dir: Path, les
     return less_priority_dir if detection.get("matched_vessel") is not None else priority_dir
 
 
+def output_filename(detection: Dict[str, Any], index: int) -> str:
+    """Use a self-contained location contract for deliverable dark-vessel alerts."""
+    target_id = str(detection.get("detection_id") or f"vessel_{index:03d}")
+    if detection.get("classification") != "DARK_VESSEL":
+        return f"{target_id}.jpg"
+    coordinates = detection.get("world_coordinates") or {}
+    try:
+        latitude = float(coordinates["latitude"])
+        longitude = float(coordinates["longitude"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("dark-vessel detection requires world_coordinates") from error
+    scene_id = str(detection.get("scene_id") or "scene")
+    return f"alert-v1__{target_id}__{scene_id}__lat-{latitude:.6f}__lon-{longitude:.6f}__DARK_VESSEL.jpg"
+
+
 def _display_image(crop: np.ndarray) -> np.ndarray:
     """Convert single- or multi-band crops to a JPEG-compatible BGR image."""
     if crop.ndim == 2:
@@ -76,9 +91,8 @@ def write_vessel_crops(
     outputs = []
     for index, detection in enumerate(detections, start=1):
         crop, _ = crop_detection(image, detection, gsd_m)
-        target_id = str(detection.get("detection_id") or f"vessel_{index:03d}")
         destination = destination_for_detection(detection, priority_dir, less_priority_dir)
-        output_path = destination / f"{target_id}.jpg"
+        output_path = destination / output_filename(detection, index)
         if not cv2.imwrite(str(output_path), _display_image(crop)):
             raise OSError(f"failed to write crop: {output_path}")
         outputs.append(output_path)
