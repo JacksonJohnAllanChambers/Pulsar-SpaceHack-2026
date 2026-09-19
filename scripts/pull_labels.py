@@ -64,6 +64,10 @@ def main() -> int:
         cid, verdict, labeller = row.get("id"), row.get("verdict"), row.get("labeller") or "anonymous"
         if not cid or not verdict:
             continue
+        # Endpoint self-tests: a synthetic contact id, or a verdict written by a test identity
+        # while wiring the shared store up. Neither is a human judgement of an image.
+        if cid.startswith("__") or labeller.startswith("__"):
+            continue
         final[cid] = verdict
         who[cid] = labeller
         seen[cid][labeller] = verdict

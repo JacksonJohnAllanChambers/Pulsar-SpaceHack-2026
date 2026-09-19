@@ -18,10 +18,18 @@ directions; we do not want a number we cannot defend.
 
 ---
 
-## One-time setup (Jack, ~2 minutes)
+## Shared store — already deployed
 
-Without this, everyone labels into their own browser and has to export a file by hand. With it,
-verdicts pool automatically and everyone sees the same progress.
+The endpoint is live and wired into [`review/config.js`](../review/config.js); verdicts pool
+automatically and everyone sees the same progress. Nothing to set up. **If you ever redeploy it,
+"Who has access" must be `Anyone` and not `Anyone with a Google account`** — the pages fetch it
+cross-origin from `127.0.0.1`, and the account-restricted setting answers with a login redirect that
+CORS blocks, so every teammate silently sits at `offline` even while signed into Google. That exact
+mistake cost us twenty minutes; the symptom is a 200 when you open the URL yourself and a 404 for
+everyone else.
+
+<details>
+<summary>How it was built, if it needs rebuilding</summary>
 
 1. Open <https://sheets.new> and name it **SpaceHack labels**.
 2. **Extensions → Apps Script**, delete the stub, paste all of [`scripts/label_server.gs`](../scripts/label_server.gs), **Save**.
@@ -35,9 +43,11 @@ verdicts pool automatically and everyone sees the same progress.
    window.LABEL_ENDPOINT = "https://script.google.com/macros/s/AKfy.../exec";
    ```
 
+</details>
+
 The endpoint accepts anonymous writes by design. It holds vessel / not-vessel verdicts on public
-Copernicus imagery and nothing else — treat it as throwaway hackathon infrastructure and delete the
-deployment afterwards.
+Copernicus imagery and nothing else — treat it as throwaway hackathon infrastructure and **delete the
+deployment when the hackathon is over**.
 
 ---
 
