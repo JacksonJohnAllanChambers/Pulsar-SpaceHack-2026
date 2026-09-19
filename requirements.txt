@@ -1,0 +1,10 @@
+# Flight dependencies only: everything the onboard applet imports.
+# All of these publish manylinux aarch64 wheels (Jetson Orin NX / Ubuntu 22.04, Python 3.10).
+numpy>=1.23.0
+opencv-python-headless>=4.7.0.72
+pillow>=9.5.0
+pydantic>=2.4.0
+pyyaml>=6.0
+psutil>=5.9.0
+tifffile>=2023.2.28
+onnxruntime>=1.16.0

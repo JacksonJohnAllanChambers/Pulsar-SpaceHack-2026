@@ -1,0 +1,196 @@
+{
+  "generated_at": "2026-09-19T14:30:40Z",
+  "orbital_pass_id": "PASS_001",
+  "vessels": [
+    {
+      "mmsi": 316000000,
+      "name": "ATLANTIC CARRIER",
+      "timestamp": "2026-09-19T14:30:40Z",
+      "latitude": 44.405442,
+      "longitude": -63.205225,
+      "sog_knots": 18.0,
+      "cog_deg": 315,
+      "source_scene": "SCENE_01"
+    },
+    {
+      "mmsi": 316000002,
+      "name": "NORDIC TRADER",
+      "timestamp": "2026-09-19T14:30:40Z",
+      "latitude": 44.397427,
+      "longitude": -63.196701,
+      "sog_knots": 14.0,
+      "cog_deg": 305.0,
+      "source_scene": "SCENE_01"
+    },
+    {
+      "mmsi": 316000004,
+      "name": "HALIFAX SPIRIT",
+      "timestamp": "2026-09-19T14:30:40Z",
+      "latitude": 44.386824,
+      "longitude": -63.179764,
+      "sog_knots": 0.0,
+      "cog_deg": 140,
+      "source_scene": "SCENE_01"
+    },
+    {
+      "mmsi": 316000100,
+      "name": "PACIFIC DAWN",
+      "timestamp": "2026-09-19T14:30:40Z",
+      "latitude": 44.396075,
+      "longitude": -63.115836,
+      "sog_knots": 15.0,
+      "cog_deg": 45,
+      "source_scene": "SCENE_02"
+    },
+    {
+      "mmsi": 316000200,
+      "name": "GRAND BANKS",
+      "timestamp": "2026-09-19T14:30:40Z",
+      "latitude": 44.357468,
+      "longitude": -63.199546,
+      "sog_knots": 13.0,
+      "cog_deg": 250,
+      "source_scene": "SCENE_03"
+    },
+    {
+      "mmsi": 316000202,
+      "name": "SEA WANDERER",
+      "timestamp": "2026-09-19T14:30:40Z",
+      "latitude": 44.339386,
+      "longitude": -63.218606,
+      "sog_knots": 0.0,
+      "cog_deg": 100,
+      "source_scene": "SCENE_03"
+    },
+    {
+      "mmsi": 316000400,
+      "name": "COASTAL STAR",
+      "timestamp": "2026-09-19T14:30:40Z",
+      "latitude": 44.563544,
+      "longitude": -63.445812,
+      "sog_knots": 11.0,
+      "cog_deg": 170,
+      "source_scene": "SCENE_05"
+    },
+    {
+      "mmsi": 316000403,
+      "name": "PILOT 7",
+      "timestamp": "2026-09-19T14:30:40Z",
+      "latitude": 44.544426,
+      "longitude": -63.433539,
+      "sog_knots": 20.0,
+      "cog_deg": 10,
+      "source_scene": "SCENE_05"
+    },
+    {
+      "mmsi": 316000500,
+      "name": "VESSEL_316000500",
+      "timestamp": "2026-09-19T14:30:40Z",
+      "latitude": 44.293137,
+      "longitude": -63.196738,
+      "sog_knots": 14.0,
+      "cog_deg": 341.4,
+      "source_scene": "SCENE_06"
+    },
+    {
+      "mmsi": 316000501,
+      "name": "VESSEL_316000501",
+      "timestamp": "2026-09-19T14:30:40Z",
+      "latitude": 44.316777,
+      "longitude": -63.16842,
+      "sog_knots": 12.7,
+      "cog_deg": 281.3,
+      "source_scene": "SCENE_06"
+    },
+    {
+      "mmsi": 316000502,
+      "name": "VESSEL_316000502",
+      "timestamp": "2026-09-19T14:30:40Z",
+      "latitude": 44.319046,
+      "longitude": -63.21827,
+      "sog_knots": 0.0,
+      "cog_deg": 254.1,
+      "source_scene": "SCENE_06"
+    },
+    {
+      "mmsi": 316000503,
+      "name": "VESSEL_316000503",
+      "timestamp": "2026-09-19T14:30:40Z",
+      "latitude": 44.293518,
+      "longitude": -63.186505,
+      "sog_knots": 11.7,
+      "cog_deg": 145.3,
+      "source_scene": "SCENE_06"
+    },
+    {
+      "mmsi": 316000504,
+      "name": "VESSEL_316000504",
+      "timestamp": "2026-09-19T14:30:40Z",
+      "latitude": 44.295522,
+      "longitude": -63.216903,
+      "sog_knots": 14.4,
+      "cog_deg": 97.5,
+      "source_scene": "SCENE_06"
+    },
+    {
+      "mmsi": 316000505,
+      "name": "VESSEL_316000505",
+      "timestamp": "2026-09-19T14:30:40Z",
+      "latitude": 44.274775,
+      "longitude": -63.221852,
+      "sog_knots": 22.7,
+      "cog_deg": 100.9,
+      "source_scene": "SCENE_06"
+    },
+    {
+      "mmsi": 316000506,
+      "name": "VESSEL_316000506",
+      "timestamp": "2026-09-19T14:30:40Z",
+      "latitude": 44.29926,
+      "longitude": -63.203722,
+      "sog_knots": 0.0,
+      "cog_deg": 357.2,
+      "source_scene": "SCENE_06"
+    },
+    {
+      "mmsi": 316000600,
+      "name": "PACIFIC DAWN",
+      "timestamp": "2026-09-19T14:30:40Z",
+      "latitude": 44.296075,
+      "longitude": -63.115809,
+      "sog_knots": 15.0,
+      "cog_deg": 45,
+      "source_scene": "SCENE_07"
+    },
+    {
+      "mmsi": 316000700,
+      "name": "GRAND BANKS",
+      "timestamp": "2026-09-19T14:30:40Z",
+      "latitude": 44.257468,
+      "longitude": -63.199546,
+      "sog_knots": 13.0,
+      "cog_deg": 250,
+      "source_scene": "SCENE_08"
+    },
+    {
+      "mmsi": 316000702,
+      "name": "SEA WANDERER",
+      "timestamp": "2026-09-19T14:30:40Z",
+      "latitude": 44.239386,
+      "longitude": -63.218574,
+      "sog_knots": 0.0,
+      "cog_deg": 100,
+      "source_scene": "SCENE_08"
+    },
+    {
+      "mmsi": 316999001,
+      "name": "GHOST TRANSPONDER",
+      "timestamp": "2026-09-19T14:30:40Z",
+      "latitude": 44.416599,
+      "longitude": -63.18283,
+      "sog_knots": 0.0,
+      "cog_deg": 0.0,
+      "source_scene": "SCENE_01"
+    }
+  ]
+}

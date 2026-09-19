@@ -1,0 +1,35 @@
+# syntax=docker/dockerfile:1
+# Pulsar SpaceHack 2026: NVIDIA Jetson Orin NX emulated container
+# Matches JetPack 6.x userland: Ubuntu 22.04 LTS, aarch64, Python 3.10
+
+FROM --platform=linux/arm64 ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    OMP_NUM_THREADS=6
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip libglib2.0-0 libgomp1 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+# Dependencies are baked in at build time: the container runs with --network none
+COPY requirements.txt /workspace/
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+COPY pyproject.toml config.example.yaml /workspace/
+COPY applet/ /workspace/applet/
+COPY simulation/ /workspace/simulation/
+COPY scripts/ /workspace/scripts/
+
+# The sample bundle is rendered at build time (seeded, reproducible) rather than committed
+RUN python3 scripts/generate_synthetic_data.py --output /workspace/data/sample_bundle \
+    && mkdir -p /workspace/data/outputs
+
+RUN useradd -m -u 1000 edgeuser && chown -R edgeuser:edgeuser /workspace
+USER edgeuser
+
+ENTRYPOINT ["python3", "-m", "applet", "run"]
+CMD ["--input", "/workspace/data/sample_bundle", "--output", "/workspace/data/outputs", "--config", "/workspace/config.example.yaml"]

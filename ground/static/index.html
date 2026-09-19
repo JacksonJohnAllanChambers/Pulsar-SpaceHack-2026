@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tactical Edge Sentinel</title>
+<style>
+  :root {
+    --bg: #0a0f16; --panel: #111923; --panel2: #16212e; --line: #223245; --text: #d7e2ee; --mute: #7f93a8;
+    --accent: #4db8ff; --dark: #ff5f5f; --mismatch: #ffb547; --known: #46d6a3; --ghost: #b78cff; --occl: #ff8ad1;
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
+    font: 13px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; overflow: hidden; }
+  button, select, input { font: inherit; color: inherit; }
+  .app { display: grid; height: 100vh; grid-template-rows: auto 1fr auto;
+    grid-template-columns: 248px minmax(0, 1fr) 348px; }
+  header { grid-column: 1 / -1; display: flex; align-items: center; gap: 18px; padding: 9px 14px;
+    background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .brand { display: flex; align-items: baseline; gap: 10px; margin-right: 6px; }
+  .brand b { font-size: 15px; letter-spacing: .04em; }
+  .brand span { color: var(--mute); font-size: 11.5px; }
+  .ctl { display: flex; align-items: center; gap: 7px; color: var(--mute); font-size: 12px; }
+  .ctl output { font-family: var(--mono); color: var(--text); min-width: 30px; text-align: right; }
+  select, .btn { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; }
+  input[type=range] { width: 92px; accent-color: var(--accent); }
+  .btn { cursor: pointer; }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #04121d; font-weight: 600; padding: 6px 16px; }
+  .btn.primary:disabled { opacity: .5; cursor: wait; }
+  .spacer { flex: 1; }
+
+  aside { background: var(--panel); overflow-y: auto; min-height: 0; }
+  aside.left { border-right: 1px solid var(--line); }
+  aside.right { border-left: 1px solid var(--line); }
+  .sec-title { padding: 10px 12px 6px; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--mute); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0;
+    background: var(--panel); z-index: 2; }
+  .scene { padding: 9px 12px; border-top: 1px solid var(--line); cursor: pointer; border-left: 3px solid transparent; }
+  .scene:hover { background: var(--panel2); }
+  .scene.sel { background: var(--panel2); border-left-color: var(--accent); }
+  .scene .id { font-family: var(--mono); font-weight: 600; display: flex; justify-content: space-between; }
+  .scene .desc { color: var(--mute); font-size: 11.5px; margin: 2px 0 5px; }
+  .pill { display: inline-block; font-size: 10px; font-family: var(--mono); padding: 1px 6px; border-radius: 9px;
+    border: 1px solid var(--line); color: var(--mute); margin: 0 3px 3px 0; white-space: nowrap; }
+  .pill.ok { color: var(--known); border-color: #1f5a47; }
+  .pill.bad { color: var(--dark); border-color: #6b2a2a; }
+  .pill.warn { color: var(--mismatch); border-color: #6b4e1d; }
+
+  main { position: relative; min-width: 0; min-height: 0; background: #05080c; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; display: block; }
+  canvas.drag { cursor: grabbing; }
+  .toolbar { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; flex-wrap: wrap; z-index: 3; right: 10px;
+    pointer-events: none; }
+  .toolbar > * { pointer-events: auto; }
+  .seg { display: flex; background: rgba(13,20,29,.92); border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+  .seg button { background: none; border: 0; padding: 5px 10px; cursor: pointer; color: var(--mute); font-size: 12px; }
+  .seg button.on { background: var(--accent); color: #04121d; font-weight: 600; }
+  .seg label { padding: 5px 9px; color: var(--mute); font-size: 12px; cursor: pointer; display: flex; gap: 5px; align-items: center; }
+  .seg input { accent-color: var(--accent); margin: 0; }
+  .readout { position: absolute; left: 10px; bottom: 10px; font-family: var(--mono); font-size: 11.5px;
+    background: rgba(13,20,29,.9); border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px; color: var(--mute); z-index: 3; }
+  .legend { position: absolute; right: 10px; bottom: 10px; background: rgba(13,20,29,.9); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 10px; font-size: 11.5px; z-index: 3; }
+  .legend div { display: flex; align-items: center; gap: 7px; }
+  .sw { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .banner { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;
+    color: var(--mute); max-width: 460px; z-index: 2; }
+  .banner h2 { color: var(--text); font-weight: 600; margin: 0 0 8px; }
+  .reject { position: absolute; top: 52px; left: 50%; transform: translateX(-50%); background: rgba(80,20,20,.92);
+    border: 1px solid #a33; color: #ffd2d2; border-radius: 7px; padding: 7px 14px; z-index: 3; font-size: 12.5px; max-width: 80%; }
+
+  .tgt { padding: 10px 12px; border-top: 1px solid var(--line); cursor: pointer; display: grid;
+    grid-template-columns: 72px 1fr; gap: 10px; border-left: 3px solid transparent; }
+  .tgt:hover { background: var(--panel2); }
+  .tgt.sel { background: var(--panel2); border-left-color: var(--accent); }
+  .tgt img { width: 72px; height: 72px; image-rendering: pixelated; border-radius: 4px; border: 1px solid var(--line); background: #000; }
+  .tgt .nochip { width: 72px; height: 72px; border-radius: 4px; border: 1px dashed var(--line); color: var(--mute);
+    font-size: 10px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 4px; }
+  .badge { font-size: 10px; font-weight: 700; letter-spacing: .05em; padding: 1px 7px; border-radius: 3px; color: #0a0f16; }
+  .tgt .head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .tgt .tid { font-family: var(--mono); font-size: 11.5px; color: var(--mute); }
+  .kv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px 8px; margin: 5px 0 4px; font-size: 11.5px; }
+  .kv span { color: var(--mute); display: block; font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; }
+  .kv b { font-family: var(--mono); font-weight: 500; }
+  .bars { display: grid; grid-template-columns: 34px 1fr 30px; gap: 2px 6px; align-items: center; font-size: 10.5px; color: var(--mute); }
+  .bar { height: 5px; background: #0b121a; border-radius: 3px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+  .bars b { font-family: var(--mono); font-weight: 500; color: var(--text); text-align: right; }
+  .note { color: var(--mute); font-size: 11.5px; margin-top: 5px; }
+  .empty { padding: 18px 12px; color: var(--mute); }
+
+  footer { grid-column: 1 / -1; background: var(--panel); border-top: 1px solid var(--line); display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0; max-height: 190px; }
+  .card { padding: 9px 13px 10px; border-right: 1px solid var(--line); min-width: 0; overflow: hidden; }
+  .card:last-child { border-right: 0; }
+  .card h4 { margin: 0 0 6px; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--mute); font-weight: 600; }
+  .big { font-family: var(--mono); font-size: 21px; font-weight: 600; line-height: 1.15; }
+  .big small { font-size: 11.5px; color: var(--mute); font-weight: 400; margin-left: 4px; }
+  .row { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--mute); }
+  .row b { font-family: var(--mono); color: var(--text); font-weight: 500; white-space: nowrap; }
+  .meter { height: 6px; background: #0b121a; border-radius: 3px; overflow: hidden; margin: 4px 0 6px; }
+  .meter i { display: block; height: 100%; background: var(--known); min-width: 2px; }
+  .stack { display: flex; height: 12px; border-radius: 3px; overflow: hidden; margin: 5px 0; background: #0b121a; }
+  .stack i { display: block; height: 100%; }
+  .lg { display: flex; flex-wrap: wrap; gap: 1px 9px; font-size: 10.5px; color: var(--mute); }
+  .lg span::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 4px; background: var(--c); }
+  .funnel { display: grid; grid-template-columns: 1fr auto; gap: 1px 8px; font-size: 11.5px; color: var(--mute); }
+  .funnel b { font-family: var(--mono); color: var(--text); font-weight: 500; text-align: right; }
+  @media (max-width: 1250px) { footer { grid-template-columns: repeat(3, minmax(0, 1fr)); max-height: 250px; overflow-y: auto; }
+    .app { grid-template-columns: 210px minmax(0, 1fr) 310px; } .brand span { display: none; } }
+  /* Narrow window: one scrolling column, viewer first */
+  @media (max-width: 900px) {
+    html, body { overflow: auto; height: auto; }
+    .app { display: flex; flex-direction: column; height: auto; }
+    header { gap: 10px 14px; position: sticky; top: 0; z-index: 5; order: 0; }
+    main { order: 1; } aside.left { order: 2; } aside.right { order: 3; } footer { order: 4; }
+    .spacer { display: none; }
+    main { height: 68vh; min-height: 380px; flex: none; }
+    aside.left, aside.right { border: 0; border-top: 1px solid var(--line); max-height: 46vh; }
+    footer { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: none; }
+    .card { border-bottom: 1px solid var(--line); }
+    .legend { display: none; }
+    .toolbar { right: 10px; }
+    .banner { width: 80%; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand"><b>TACTICAL EDGE SENTINEL</b><span>ground console &middot; runs the onboard applet unmodified</span></div>
+    <div class="ctl">Bundle <select id="bundle"></select></div>
+    <div class="ctl" title="CFAR threshold: NIR pixel must exceed the local sea background by k sigma">CFAR k&sigma;
+      <input type="range" id="k" min="3" max="10" step="0.5" value="5"><output id="kOut">5.0</output></div>
+    <div class="ctl" title="Minimum fused physics evidence to keep a candidate">Min physics
+      <input type="range" id="phys" min="0" max="0.9" step="0.05" value="0.35"><output id="physOut">0.35</output></div>
+    <div class="ctl" title="Scenes cloudier than this are rejected before any detection work">Max cloud %
+      <input type="range" id="cloud" min="5" max="95" step="5" value="60"><output id="cloudOut">60</output></div>
+    <label class="ctl" title="Stage 3: ONNX micro-CNN on candidate chips"><input type="checkbox" id="cnn" checked> CNN verifier</label>
+    <div class="spacer"></div>
+    <a class="btn" id="dl" href="/api/download" style="display:none;text-decoration:none">Download tarball</a>
+    <button class="btn primary" id="run">Run pass</button>
+  </header>
+
+  <aside class="left"><div class="sec-title">Scenes in pass</div><div id="scenes"><div class="empty">No pass executed yet.</div></div></aside>
+
+  <main id="main">
+    <canvas id="cv"></canvas>
+    <div class="toolbar">
+      <div class="seg" id="layers">
+        <button data-l="rgb" class="on">True colour</button><button data-l="nir">NIR</button>
+        <button data-l="false">False colour</button><button data-l="ndwi">NDWI</button><button data-l="zscore">CFAR z-score</button>
+      </div>
+      <div class="seg">
+        <label><input type="checkbox" id="oMasks"> Masks</label>
+        <label><input type="checkbox" id="oDet" checked> Detections</label>
+        <label><input type="checkbox" id="oAis" checked> AIS</label>
+        <label><input type="checkbox" id="oTruth"> Ground truth</label>
+        <label><input type="checkbox" id="oRej"> CNN rejects</label>
+      </div>
+      <div class="seg"><button id="fit">Fit</button></div>
+    </div>
+    <div class="reject" id="reject" style="display:none"></div>
+    <div class="banner" id="banner"><h2>No pass loaded</h2>Choose an input bundle and press <b>Run pass</b>. The console executes the same
+      code path as <code>python -m applet run</code> and shows every intermediate stage.</div>
+    <div class="readout" id="readout">&nbsp;</div>
+    <div class="legend">
+      <div><i class="sw" style="background:var(--dark)"></i>Dark vessel (no AIS)</div>
+      <div><i class="sw" style="background:var(--mismatch)"></i>AIS kinematic mismatch</div>
+      <div><i class="sw" style="background:var(--known)"></i>Confirmed known vessel</div>
+      <div><i class="sw" style="background:var(--ghost)"></i>AIS predicted position</div>
+    </div>
+  </main>
+
+  <aside class="right">
+    <div class="sec-title"><span>Downlink queue <span id="tcount"></span></span>
+      <label style="text-transform:none;letter-spacing:0"><input type="checkbox" id="onlyScene" checked> this scene</label></div>
+    <div id="targets"><div class="empty">Targets appear here in downlink priority order.</div></div>
+  </aside>
+
+  <footer id="footer"></footer>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const COLORS = { DARK_VESSEL: '#ff5f5f', AIS_KINEMATIC_MISMATCH: '#ffb547', CONFIRMED_KNOWN_VESSEL: '#46d6a3' };
+const LABELS = { DARK_VESSEL: 'DARK', AIS_KINEMATIC_MISMATCH: 'MISMATCH', CONFIRMED_KNOWN_VESSEL: 'KNOWN' };
+const STAGE_COLORS = ['#4db8ff', '#46d6a3', '#ffb547', '#b78cff', '#ff8ad1', '#8fa3b8'];
+let pass = null, scene = null, selected = null, layer = 'rgb', modelCard = {};
+const view = { s: 1, ox: 0, oy: 0 };
+const images = {};
+const cv = $('#cv'), ctx = cv.getContext('2d');
+
+for (const [id, out, digits] of [['k', 'kOut', 1], ['phys', 'physOut', 2], ['cloud', 'cloudOut', 0]])
+  $('#' + id).addEventListener('input', e => $('#' + out).textContent = (+e.target.value).toFixed(digits));
+
+async function init() {
+  const b = await (await fetch('/api/bundles')).json();
+  $('#bundle').innerHTML = b.bundles.map(x => `<option ${x.endsWith('sample_bundle') ? 'selected' : ''}>${x}</option>`).join('')
+    || '<option value="">(no bundles under data/)</option>';
+  modelCard = await (await fetch('/api/model_card')).json();
+  resize();
+}
+
+async function runPass() {
+  const btn = $('#run');
+  btn.disabled = true; btn.textContent = 'Running…';
+  try {
+    const r = await fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bundle: $('#bundle').value, cfar_k_sigma: +$('#k').value, min_physics_score: +$('#phys').value,
+        cloud_cover_max_pct: +$('#cloud').value, verifier_enabled: $('#cnn').checked }) });
+    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    const keep = scene && scene.id;
+    pass = await r.json();
+    for (const k in images) delete images[k];
+    pass.targetsById = Object.fromEntries(pass.targets.map(t => [t.detection_id, t]));
+    $('#dl').style.display = '';
+    $('#banner').style.display = 'none';
+    renderScenes(); renderFooter();
+    selectScene(pass.scenes.find(s => s.id === keep) || pass.scenes.find(s => s.targets.length) || pass.scenes[0], true);
+  } catch (e) { alert('Pass failed: ' + e.message); }
+  btn.disabled = false; btn.textContent = 'Run pass';
+}
+
+function renderScenes() {
+  $('#scenes').innerHTML = pass.scenes.map(s => {
+    const q = s.quality || {};
+    const pills = [];
+    if (s.ingest_error) pills.push(`<span class="pill bad">INGEST: ${s.ingest_error.split(':')[0]}</span>`);
+    else {
+      pills.push(`<span class="pill ${q.is_usable ? 'ok' : 'bad'}">${q.is_usable ? 'USABLE' : 'REJECTED'}</span>`);
+      pills.push(`<span class="pill">cloud ${fmt(q.cloud_cover_pct, 0)}%</span><span class="pill">sea ${fmt(q.water_pct, 0)}%</span>`);
+      if (s.detector && s.detector.rough_sea_mode) pills.push('<span class="pill warn">ROUGH-SEA MODE</span>');
+      (q.warnings || []).forEach(w => pills.push(`<span class="pill warn">${w.replace(/_/g, ' ')}</span>`));
+    }
+    return `<div class="scene" data-id="${s.id}"><div class="id"><span>${s.id}</span><span>${s.targets.length ? s.targets.length + ' tgt' : ''}</span></div>
+      <div class="desc">${s.description || s.file || ''}</div>${pills.join('')}</div>`;
+  }).join('');
+  document.querySelectorAll('.scene').forEach(el => el.onclick = () => selectScene(pass.scenes.find(s => s.id === el.dataset.id), true));
+}
+
+function selectScene(s, refit) {
+  scene = s; selected = null;
+  document.querySelectorAll('.scene').forEach(el => el.classList.toggle('sel', el.dataset.id === s.id));
+  const rej = $('#reject');
+  if (s.ingest_error || !s.quality.is_usable) {
+    rej.style.display = ''; rej.textContent = (s.ingest_error ? 'Rejected at ingest: ' : 'Scene rejected before detection: ') +
+      (s.quality.rejection_reasons || []).join('; ') + ' — no detector or CNN time was spent on it.';
+  } else rej.style.display = 'none';
+  if (refit) fit();
+  renderTargets(); draw();
+}
+
+function img(sceneId, l) {
+  const key = sceneId + '/' + l;
+  if (!images[key]) {
+    const im = new Image();
+    im.onload = () => { im.ready = true; draw(); };
+    im.onerror = () => { im.failed = true; draw(); };
+    im.src = `/api/layer/${sceneId}/${l}.png?t=${Date.now()}`;
+    images[key] = im;
+  }
+  return images[key];
+}
+
+function resize() {
+  const r = $('#main').getBoundingClientRect(), d = window.devicePixelRatio || 1;
+  cv.width = Math.max(1, r.width * d); cv.height = Math.max(1, r.height * d);
+  draw();
+}
+function fit() {
+  if (!scene || !scene.width) return;
+  const r = $('#main').getBoundingClientRect();
+  view.s = Math.min(r.width / scene.width, (r.height - 40) / scene.height) * 0.94;
+  view.ox = (r.width - scene.width * view.s) / 2; view.oy = (r.height - scene.height * view.s) / 2 + 14;
+  draw();
+}
+const X = x => x * view.s + view.ox, Y = y => y * view.s + view.oy;
+
+function draw() {
+  const d = window.devicePixelRatio || 1;
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  if (!scene || !scene.width) return;
+  const w = scene.width * view.s, h = scene.height * view.s;
+  ctx.imageSmoothingEnabled = view.s < 2;
+  const base = img(scene.id, layer);
+  if (base.ready) ctx.drawImage(base, view.ox, view.oy, w, h);
+  else { ctx.fillStyle = '#0b121a'; ctx.fillRect(view.ox, view.oy, w, h);
+    ctx.fillStyle = '#7f93a8'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(base.failed ? 'Layer not available for this scene (it was rejected before this stage)' : 'Rendering layer…', view.ox + w / 2, view.oy + h / 2); }
+  if ($('#oMasks').checked) { const m = img(scene.id, 'masks'); if (m.ready) { ctx.imageSmoothingEnabled = false; ctx.drawImage(m, view.ox, view.oy, w, h); } }
+  ctx.strokeStyle = '#223245'; ctx.lineWidth = 1; ctx.strokeRect(view.ox, view.oy, w, h);
+
+  if ($('#oTruth').checked && scene.truth) drawTruth();
+  if ($('#oRej').checked) (scene.rejected_candidates || []).forEach(drawReject);
+  if ($('#oAis').checked) drawAis();
+  if ($('#oDet').checked) scene.targets.map(id => pass.targetsById[id]).filter(Boolean).forEach(drawTarget);
+  drawScaleBar();
+}
+
+function arrow(x0, y0, x1, y1, color, width) {
+  const a = Math.atan2(y1 - y0, x1 - x0), hl = 8;
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = width;
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1 - hl * Math.cos(a - .4), y1 - hl * Math.sin(a - .4));
+  ctx.lineTo(x1 - hl * Math.cos(a + .4), y1 - hl * Math.sin(a + .4)); ctx.closePath(); ctx.fill();
+}
+
+function drawTarget(t) {
+  const c = COLORS[t.classification] || '#4db8ff', x = X(t.apex_px[0]), y = Y(t.apex_px[1]), sel = selected === t.detection_id;
+  const r = Math.max(9, (t.hull_length_m / scene.gsd_m / 2) * view.s + 6);
+  if (t.wake_end_px) { ctx.setLineDash([5, 4]); ctx.strokeStyle = c; ctx.globalAlpha = .75; ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(X(t.wake_end_px[0]), Y(t.wake_end_px[1])); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1; }
+  ctx.lineWidth = sel ? 3 : 1.8; ctx.strokeStyle = c;
+  if (t.target_type === 'WAKE_ONLY_CLOUD_OCCLUDED') ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  if (sel) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, r + 4, 0, Math.PI * 2); ctx.stroke(); }
+  const hd = t.heading_image_deg * Math.PI / 180, len = r + 22;
+  if (!t.heading_ambiguous_180) arrow(x + Math.sin(hd) * r, y - Math.cos(hd) * r, x + Math.sin(hd) * len, y - Math.cos(hd) * len, c, 2);
+  else { ctx.strokeStyle = c; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x - Math.sin(hd) * len, y + Math.cos(hd) * len);
+    ctx.lineTo(x + Math.sin(hd) * len, y - Math.cos(hd) * len); ctx.stroke(); }
+  const label = t.detection_id.split('_').pop() + ' ' + (LABELS[t.classification] || '');
+  ctx.font = '600 11px ' + getComputedStyle(document.body).fontFamily; ctx.textAlign = 'left';
+  const tw = ctx.measureText(label).width;
+  ctx.fillStyle = 'rgba(8,13,19,.85)'; ctx.fillRect(x + r + 4, y - r - 8, tw + 8, 16);
+  ctx.fillStyle = c; ctx.fillText(label, x + r + 8, y - r + 4);
+}
+
+function drawAis() {
+  (scene.ais || []).forEach(a => {
+    const x = X(a.x), y = Y(a.y);
+    ctx.strokeStyle = '#b78cff'; ctx.fillStyle = 'rgba(183,140,255,.18)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x, y - 7); ctx.lineTo(x + 7, y); ctx.lineTo(x, y + 7); ctx.lineTo(x - 7, y); ctx.closePath(); ctx.fill(); ctx.stroke();
+    if (a.sog_knots > 0.5) { const c = a.cog_deg * Math.PI / 180; arrow(x, y, x + Math.sin(c) * 26, y - Math.cos(c) * 26, '#b78cff', 1.3); }
+    ctx.font = '10.5px sans-serif'; ctx.fillStyle = '#cdb6ff'; ctx.textAlign = 'left';
+    ctx.fillText(`${a.name} · ${fmt(a.sog_knots, 0)} kn`, x + 10, y + 16);
+  });
+}
+function drawTruth() {
+  scene.truth.vessels.forEach(v => {
+    const x = X(v.x), y = Y(v.y); ctx.strokeStyle = v.visible ? '#7dff9a' : '#5c6f66'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(x - 6, y); ctx.lineTo(x + 6, y); ctx.moveTo(x, y - 6); ctx.lineTo(x, y + 6); ctx.stroke();
+    ctx.font = '10px sans-serif'; ctx.fillStyle = ctx.strokeStyle; ctx.textAlign = 'right';
+    ctx.fillText(`${fmt(v.length_m, 0)} m · ${fmt(v.speed_knots, 0)} kn · ${fmt(v.heading_deg, 0)}°${v.visible ? '' : ' (under cloud)'}`, x - 9, y + 14);
+  });
+  (scene.truth.islets || []).forEach(p => { ctx.strokeStyle = '#c9a36b'; ctx.strokeRect(X(p[0]) - 5, Y(p[1]) - 5, 10, 10); });
+}
+function drawReject(t) {
+  const x = X(t.apex_px[0]), y = Y(t.apex_px[1]); ctx.strokeStyle = '#9aa7b5'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(x - 6, y - 6); ctx.lineTo(x + 6, y + 6); ctx.moveTo(x + 6, y - 6); ctx.lineTo(x - 6, y + 6); ctx.stroke();
+  ctx.font = '10px sans-serif'; ctx.fillStyle = '#9aa7b5'; ctx.textAlign = 'left'; ctx.fillText(`CNN ${fmt(t.verifier_prob, 2)}`, x + 9, y + 3);
+}
+function drawScaleBar() {
+  const r = $('#main').getBoundingClientRect();
+  let meters = 100; for (const m of [50, 100, 250, 500, 1000, 2000, 5000]) { meters = m; if (m / scene.gsd_m * view.s > 70) break; }
+  const px = meters / scene.gsd_m * view.s, x = r.width / 2 - px / 2, y = r.height - 18;
+  ctx.strokeStyle = '#d7e2ee'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y - 4); ctx.lineTo(x, y); ctx.lineTo(x + px, y); ctx.lineTo(x + px, y - 4); ctx.stroke();
+  ctx.fillStyle = '#d7e2ee'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(meters >= 1000 ? meters / 1000 + ' km' : meters + ' m', x + px / 2, y - 6);
+}
+
+function renderTargets() {
+  if (!pass) return;
+  const only = $('#onlyScene').checked && scene;
+  const list = pass.targets.filter(t => !only || t.scene_id === scene.id);
+  const ghosts = pass.ais_not_observed.filter(g => !only || g.scene_id === scene.id);
+  $('#tcount').textContent = `(${list.length})`;
+  const bar = (label, v) => `<span>${label}</span><div class="bar"><i style="width:${Math.round((v || 0) * 100)}%"></i></div><b>${v == null ? 'n/a' : fmt(v, 2)}</b>`;
+  let html = list.map(t => {
+    const c = COLORS[t.classification] || '#4db8ff', wc = t.world_coordinates;
+    const chip = t.downlink_priority >= 0.5 ? `<img src="/api/chip/${t.detection_id}.jpg?t=${Date.now()}" alt="target chip">`
+      : '<div class="nochip">chip withheld (known traffic)</div>';
+    return `<div class="tgt ${selected === t.detection_id ? 'sel' : ''}" data-id="${t.detection_id}">${chip}<div>
+      <div class="head"><span class="badge" style="background:${c}">${LABELS[t.classification] || t.classification}</span><span class="tid">${t.detection_id} · P${fmt(t.downlink_priority, 2)}</span></div>
+      <div class="kv"><div><span>Heading</span><b>${fmt(t.heading_deg, 0)}°${t.heading_ambiguous_180 ? ' ±180' : ''}</b></div>
+        <div><span>Speed</span><b>${t.estimated_speed_knots == null ? 'n/a' : fmt(t.estimated_speed_knots, 1) + ' kn'}</b></div>
+        <div><span>Hull</span><b>${t.hull_resolved === false ? '<' : ''}${fmt(t.hull_length_m, 0)} m</b></div>
+        <div><span>Wake</span><b>${t.wake_length_m ? fmt(t.wake_length_m, 0) + ' m' : 'none'}</b></div>
+        <div><span>Kelvin arms</span><b>${t.kelvin_arms_detected ? fmt(t.kelvin_half_angle_deg, 0) + '°' : '—'}</b></div>
+        <div><span>Type</span><b title="${t.target_type}">${t.target_type.replace('VESSEL_', '').replace('WAKE_ONLY_CLOUD_OCCLUDED', 'OCCLUDED').replace('STATIONARY_OR_SLOW', 'STATIC').toLowerCase()}</b></div></div>
+      <div class="bars">${bar('Phys', t.physics_score)}${bar('CNN', t.verifier_prob)}${bar('Conf', t.confidence)}</div>
+      <div class="note">${fmt(wc.latitude, 4)}, ${fmt(wc.longitude, 4)} · ${t.intelligence_notes}</div></div></div>`;
+  }).join('');
+  html += ghosts.map(g => `<div class="tgt" style="cursor:default"><div class="nochip">no optical target</div><div>
+      <div class="head"><span class="badge" style="background:var(--ghost)">AIS NOT OBSERVED</span><span class="tid">${g.scene_id}</span></div>
+      <div class="note"><b style="color:var(--text)">${g.name}</b> (MMSI ${g.mmsi}) dead-reckons to ${fmt(g.predicted_latitude, 4)}, ${fmt(g.predicted_longitude, 4)} — ${g.reason.replace(/_/g, ' ').toLowerCase()}.</div></div></div>`).join('');
+  $('#targets').innerHTML = html || '<div class="empty">No targets in this scene.</div>';
+  document.querySelectorAll('.tgt[data-id]').forEach(el => el.onclick = () => focusTarget(el.dataset.id));
+}
+
+function focusTarget(id) {
+  const t = pass.targetsById[id]; if (!t) return;
+  if (!scene || scene.id !== t.scene_id) selectScene(pass.scenes.find(s => s.id === t.scene_id), false);
+  selected = id;
+  const r = $('#main').getBoundingClientRect();
+  view.s = Math.max(view.s, 3.2); view.ox = r.width / 2 - t.apex_px[0] * view.s; view.oy = r.height / 2 - t.apex_px[1] * view.s;
+  renderTargets(); draw();
+  const el = document.querySelector(`.tgt[data-id="${id}"]`); if (el) el.scrollIntoView({ block: 'nearest' });
+}
+
+function renderFooter() {
+  const t = pass.telemetry, a = pass.accuracy, v = t.verifier || {}, f = t.funnel || {}, d = pass.downlink;
+  const total = t.stages.reduce((s, x) => s + x.seconds, 0) || 1;
+  const usable = pass.scenes.filter(s => s.quality && s.quality.is_usable).length;
+  const counts = c => pass.targets.filter(x => x.classification === c).length;
+  const mc = modelCard.variants || {};
+  $('#footer').innerHTML = `
+    <div class="card"><h4>Pass summary</h4><div class="big">${pass.targets.length}<small>targets</small></div>
+      <div class="row"><span style="color:var(--dark)">Dark vessels</span><b>${counts('DARK_VESSEL')}</b></div>
+      <div class="row"><span style="color:var(--mismatch)">Kinematic mismatch</span><b>${counts('AIS_KINEMATIC_MISMATCH')}</b></div>
+      <div class="row"><span style="color:var(--known)">Confirmed known</span><b>${counts('CONFIRMED_KNOWN_VESSEL')}</b></div>
+      <div class="row"><span style="color:var(--ghost)">AIS not observed</span><b>${pass.ais_not_observed.length}</b></div>
+      <div class="row"><span>Scenes usable / total</span><b>${usable} / ${pass.scenes.length}</b></div></div>
+    <div class="card"><h4>Edge budget (Orin NX envelope)</h4><div class="big">${fmt(t.wall_clock_time_s, 2)}<small>s wall clock</small></div>
+      <div class="row"><span>Peak RAM</span><b>${fmt(t.peak_memory_mb, 0)} MB / 14 GB</b></div>
+      <div class="meter"><i style="width:${Math.max(t.memory_budget_used_pct, .5)}%"></i></div>
+      <div class="row"><span>Cores busy (avg)</span><b>${fmt(t.avg_cores_busy, 2)} / ${t.cpu_core_budget}</b></div>
+      <div class="meter"><i style="width:${Math.min(100, t.avg_cores_busy / t.cpu_core_budget * 100)}%"></i></div>
+      <div class="row"><span>Throughput</span><b>${fmt((f.pixels_screened || 0) / 1e6 / t.wall_clock_time_s, 1)} Mpx/s</b></div></div>
+    <div class="card"><h4>Downlink</h4><div class="big">${fmt(t.data_reduction_ratio, 0)}&times;<small>smaller</small></div>
+      <div class="row"><span>Raw sensor data</span><b>${fmt(t.input_size_mb, 1)} MB</b></div>
+      <div class="row"><span>Tarball</span><b>${fmt(t.output_size_kb, 1)} KB</b></div>
+      <div class="meter"><i style="width:${Math.min(100, t.output_size_kb / 500 * 100)}%"></i></div>
+      <div class="row"><span>Chips included</span><b>${d.included_chips_count}</b></div>
+      <div class="row"><span>Bandwidth saved</span><b>${fmt(t.bandwidth_savings_pct, 3)}%</b></div></div>
+    <div class="card"><h4>Stage latency</h4>
+      <div class="stack">${t.stages.map((s, i) => `<i style="width:${s.seconds / total * 100}%;background:${STAGE_COLORS[i % 6]}" title="${s.stage}: ${s.seconds}s"></i>`).join('')}</div>
+      ${t.stages.map((s, i) => `<div class="row"><span><i class="sw" style="background:${STAGE_COLORS[i % 6]};width:7px;height:7px;border-radius:2px;margin-right:5px"></i>${s.stage.replace('Pipeline', '')}</span><b>${fmt(s.seconds * 1000, 0)} ms</b></div>`).join('')}</div>
+    <div class="card"><h4>Detection funnel</h4><div class="funnel">
+      <span>Pixels screened</span><b>${((f.pixels_screened || 0) / 1e6).toFixed(2)} M</b>
+      <span>CFAR pixels</span><b>${(f.cfar_pixels || 0).toLocaleString()}</b>
+      <span>Candidate blobs</span><b>${f.candidates ?? 0}</b>
+      <span>Passed physics</span><b>${f.physics_accepted ?? 0}</b>
+      <span>Passed CNN</span><b>${f.verified ?? '—'}</b>
+      <span>Dark / mismatch</span><b>${counts('DARK_VESSEL')} / ${counts('AIS_KINEMATIC_MISMATCH')}</b></div>
+      <div class="row" style="margin-top:5px"><span>CNN</span><b title="${(v.providers || []).join(', ')}">${v.status || 'n/a'} · ${v.chips_inferred || 0} chips · ${fmt(v.inference_ms, 1)} ms</b></div>
+      ${mc.int8 ? `<div class="row"><span>INT8 vs FP32</span><b>${mc.int8.size_kb} / ${mc.fp32.size_kb} KB · AUC ${mc.int8.val_auc} / ${mc.fp32.val_auc}</b></div>` : ''}</div>
+    <div class="card"><h4>Accuracy vs ground truth</h4>${a ? `
+      <div class="big">${fmt(a.f1, 2)}<small>F1</small></div>
+      <div class="row"><span>Precision / recall</span><b>${fmt(a.precision, 2)} / ${fmt(a.recall, 2)}</b></div>
+      <div class="row"><span>TP / FP / FN</span><b>${a.true_positives} / ${a.false_positives} / ${a.false_negatives}</b></div>
+      <div class="row"><span>Heading MAE</span><b>${a.heading_mae_deg ?? 'n/a'}° (n=${a.heading_n})</b></div>
+      <div class="row"><span>Speed MAE</span><b>${a.speed_mae_knots ?? 'n/a'} kn (n=${a.speed_n})</b></div>
+      <div class="row"><span>AIS class accuracy</span><b>${a.ais_class_accuracy == null ? 'n/a' : fmt(a.ais_class_accuracy * 100, 0) + '%'}</b></div>`
+      : '<div class="row"><span>This bundle carries no ground truth.</span></div>'}</div>`;
+}
+
+function fmt(v, d) { return v == null || isNaN(v) ? 'n/a' : (+v).toFixed(d); }
+
+// ---- interaction
+let drag = null;
+cv.addEventListener('mousedown', e => { drag = { x: e.clientX, y: e.clientY, ox: view.ox, oy: view.oy, moved: false }; cv.classList.add('drag'); });
+window.addEventListener('mouseup', e => {
+  if (drag && !drag.moved && pass && scene && scene.width) {
+    const r = cv.getBoundingClientRect(), px = (e.clientX - r.left - view.ox) / view.s, py = (e.clientY - r.top - view.oy) / view.s;
+    let best = null, bd = 18 / view.s + 8;
+    scene.targets.forEach(id => { const t = pass.targetsById[id]; const dd = Math.hypot(t.apex_px[0] - px, t.apex_px[1] - py); if (dd < bd) { bd = dd; best = id; } });
+    if (best) { selected = best; renderTargets(); draw(); const el = document.querySelector(`.tgt[data-id="${best}"]`); if (el) el.scrollIntoView({ block: 'nearest' }); }
+  }
+  drag = null; cv.classList.remove('drag');
+});
+window.addEventListener('mousemove', e => {
+  if (drag) { const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+    view.ox = drag.ox + dx; view.oy = drag.oy + dy; draw(); }
+  if (!scene || !scene.width || e.target !== cv) return;
+  const r = cv.getBoundingClientRect(), px = (e.clientX - r.left - view.ox) / view.s, py = (e.clientY - r.top - view.oy) / view.s;
+  if (px < 0 || py < 0 || px >= scene.width || py >= scene.height) { $('#readout').innerHTML = '&nbsp;'; return; }
+  const u = px / (scene.width - 1), v = py / (scene.height - 1), c = scene.corners;
+  const lon = (1 - v) * ((1 - u) * c.ul[0] + u * c.ur[0]) + v * ((1 - u) * c.ll[0] + u * c.lr[0]);
+  const lat = (1 - v) * ((1 - u) * c.ul[1] + u * c.ur[1]) + v * ((1 - u) * c.ll[1] + u * c.lr[1]);
+  $('#readout').textContent = `px ${px.toFixed(0)}, ${py.toFixed(0)}   ${lat.toFixed(5)}°, ${lon.toFixed(5)}°   zoom ${view.s.toFixed(2)}×   GSD ${scene.gsd_m} m`;
+});
+cv.addEventListener('wheel', e => {
+  e.preventDefault(); if (!scene) return;
+  const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, k = Math.exp(-e.deltaY * 0.0015);
+  const ns = Math.min(40, Math.max(0.05, view.s * k));
+  view.ox = mx - (mx - view.ox) * ns / view.s; view.oy = my - (my - view.oy) * ns / view.s; view.s = ns; draw();
+}, { passive: false });
+$('#layers').addEventListener('click', e => { if (!e.target.dataset.l) return; layer = e.target.dataset.l;
+  document.querySelectorAll('#layers button').forEach(b => b.classList.toggle('on', b === e.target)); draw(); });
+['oMasks', 'oDet', 'oAis', 'oTruth', 'oRej'].forEach(id => $('#' + id).addEventListener('change', draw));
+$('#onlyScene').addEventListener('change', renderTargets);
+$('#fit').onclick = fit; $('#run').onclick = runPass;
+new ResizeObserver(resize).observe($('#main'));
+init();
+</script>
+</body>
+</html>
