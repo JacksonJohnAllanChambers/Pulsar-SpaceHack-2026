@@ -179,7 +179,7 @@ def build_items(sc_dir: str) -> List[Dict[str, Any]]:
 
 
 PAGE = """<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><title>Contact review</title>
+<html lang="en"><head><meta charset="utf-8"><title>__TITLE__</title>
 <style>
 :root{--bg:#0e1116;--panel:#171c24;--line:#2a3240;--fg:#e6edf3;--dim:#8b98a8;
 --vessel:#3fb950;--not:#f85149;--struct:#d29922;--unsure:#8b949e;--accent:#58a6ff}
@@ -216,18 +216,26 @@ border:1px solid var(--line);color:var(--dim);cursor:pointer;user-select:none}
 .v-structure.on{background:var(--struct);color:#160f02;border-color:var(--struct)}
 .v-unsure.on{background:var(--unsure);color:#0d1117;border-color:var(--unsure)}
 .done{opacity:.55}
+nav{padding:8px 16px;background:#12161d;border-bottom:1px solid var(--line);font-size:12px;
+display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+nav a{color:var(--dim);text-decoration:none;border:1px solid var(--line);border-radius:5px;padding:2px 7px}
+nav a:hover{color:var(--fg)}
+nav a.here{background:var(--accent);color:#04121f;border-color:var(--accent);font-weight:600}
+nav a.full{border-color:var(--vessel);color:var(--vessel)}
 </style></head><body>
 <header>
-<h1>Contact review</h1>
+<h1>__TITLE__</h1>
 <div id="bar"><div id="fill"></div></div>
 <div id="count" class="keys"></div>
 <div class="keys"><b>V</b> vessel <b>N</b> not <b>S</b> structure <b>U</b> unsure <b>&larr;&rarr;</b> move</div>
 <button id="dl">Download labels.json</button>
 <button id="clr" class="ghost">Reset</button>
 </header>
+__NAV__
 <main id="grid"></main>
 <script>
 const ITEMS = __ITEMS__;
+const GRAND_TOTAL = __TOTAL__;
 const KEY = "contact_labels_v1";
 let labels = {};
 try { labels = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { labels = {}; }
@@ -248,7 +256,7 @@ ITEMS.forEach((it, i) => {
     <div class="hd"><span class="cls" style="color:${colour}">${it.cls.replace(/_/g, " ")}</span>
     <span class="id">${it.scene}</span></div>
     <div class="imgs">${it.imgs.map((s, k) => s
-      ? `<figure><img src="${s}" alt=""><figcaption>${CAPS[k]}</figcaption></figure>`
+      ? `<figure><img loading="lazy" src="${s}" alt=""><figcaption>${CAPS[k]}</figcaption></figure>`
       : `<figure><img alt=""><figcaption>${CAPS[k]}</figcaption></figure>`).join("")}</div>
     <div class="facts">${it.facts.map(f => `<div>${f}</div>`).join("")}
       <div>${it.lat}, ${it.lon}</div></div>
@@ -266,7 +274,10 @@ function paint() {
   });
   const n = ITEMS.filter(it => labels[it.id]).length;
   document.getElementById("fill").style.width = (100 * n / ITEMS.length) + "%";
-  document.getElementById("count").textContent = n + " / " + ITEMS.length + " labelled";
+  const all = Object.keys(labels).length;
+  document.getElementById("count").textContent = GRAND_TOTAL > ITEMS.length
+    ? n + " / " + ITEMS.length + " here · " + all + " / " + GRAND_TOTAL + " overall"
+    : n + " / " + ITEMS.length + " labelled";
   try { localStorage.setItem(KEY, JSON.stringify(labels)); } catch (e) {}
 }
 
@@ -294,7 +305,7 @@ document.addEventListener("keydown", e => {
 
 document.getElementById("dl").onclick = () => {
   const payload = {generated: new Date().toISOString(),
-    labelled: Object.keys(labels).length, total: ITEMS.length, labels: labels};
+    labelled: Object.keys(labels).length, total: GRAND_TOTAL, labels: labels};
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], {type: "application/json"}));
   a.download = "labels.json"; a.click();
@@ -309,21 +320,84 @@ paint();
 """
 
 
+def render(path: str, title: str, items: List[Dict[str, Any]], total: int, nav: str = "") -> float:
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(PAGE.replace("__ITEMS__", json.dumps(items))
+                    .replace("__TITLE__", title)
+                    .replace("__TOTAL__", str(total))
+                    .replace("__NAV__", nav))
+    return os.path.getsize(path) / 1e6
+
+
+def nav_html(scene_ids: List[str], current: Optional[str]) -> str:
+    """Pages share one localStorage key, so the verdict count is live across the whole set."""
+    links = "".join(
+        f'<a href="scene_{s.lower()}.html" class="{"here" if s == current else ""}" '
+        f'data-scene="{s}">{s.replace("S2_", "")}</a>'
+        for s in scene_ids
+    )
+    return f'<nav><span style="color:#8b98a8">scenes:</span>{links}</nav>'
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--scorecard", "-s", default="data/outputs/us_scorecard",
                     help="directory holding contacts.json written by scripts/scorecard.py")
     ap.add_argument("--output", "-o", default="data/outputs/review")
+    ap.add_argument("--split", action="store_true",
+                    help="one page per scene plus an index; labels are shared across them")
     args = ap.parse_args()
 
     items = build_items(args.scorecard)
     os.makedirs(args.output, exist_ok=True)
-    path = os.path.join(args.output, "contact_sheet.html")
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(PAGE.replace("__ITEMS__", json.dumps(items)))
     n_miss = sum(1 for i in items if i["kind"] == "miss")
-    size_mb = os.path.getsize(path) / 1e6
-    print(f"\n[done] {len(items) - n_miss} contacts + {n_miss} AIS misses -> {path} ({size_mb:.1f} MB)")
+
+    if not args.split:
+        path = os.path.join(args.output, "contact_sheet.html")
+        mb = render(path, "Contact review", items, len(items))
+        print(f"\n[done] {len(items) - n_miss} contacts + {n_miss} AIS misses -> {path} ({mb:.1f} MB)")
+        return 0
+
+    by_scene: Dict[str, List[Dict[str, Any]]] = {}
+    for it in items:
+        by_scene.setdefault(it["scene"], []).append(it)
+    scene_ids = sorted(by_scene)
+
+    total_mb = 0.0
+    for sid in scene_ids:
+        path = os.path.join(args.output, f"scene_{sid.lower()}.html")
+        total_mb += render(path, sid.replace("S2_", "") + " — contact review",
+                           by_scene[sid], len(items), nav_html(scene_ids, sid))
+
+    rows = "".join(
+        f'<a href="scene_{s.lower()}.html" data-scene="{s}">{s.replace("S2_", "")} '
+        f'<b>{len(by_scene[s])}</b></a>' for s in scene_ids)
+    index = os.path.join(args.output, "index.html")
+    with open(index, "w", encoding="utf-8") as f:
+        f.write(f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<title>Contact review</title><style>
+body{{margin:0;background:#0e1116;color:#e6edf3;font:14px/1.6 ui-sans-serif,system-ui,sans-serif;padding:28px}}
+h1{{font-size:19px;margin:0 0 4px}}p{{color:#8b98a8;max-width:62ch}}
+.grid{{display:grid;gap:9px;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));margin-top:20px}}
+a{{display:flex;justify-content:space-between;gap:8px;color:#e6edf3;text-decoration:none;
+background:#171c24;border:1px solid #2a3240;border-radius:8px;padding:10px 12px}}
+a:hover{{border-color:#58a6ff}}a b{{color:#58a6ff}}
+a .pr{{font-size:11px;color:#3fb950}}
+</style></head><body><h1>Contact review</h1>
+<p>{len(items) - n_miss} contacts and {n_miss} clear-water AIS misses across {len(scene_ids)} real
+Sentinel-2 scenes. Verdicts are shared across every page, so you can stop and resume anywhere;
+press <b>Download labels.json</b> on any page to export the lot.</p>
+<div class="grid">{rows}</div>
+<script>
+let L={{}}; try {{ L=JSON.parse(localStorage.getItem("contact_labels_v1")||"{{}}"); }} catch(e){{}}
+document.querySelectorAll("a[data-scene]").forEach(a=>{{
+  const done=Object.keys(L).filter(k=>k.startsWith(a.dataset.scene)||k.startsWith("MISS_"+a.dataset.scene)).length;
+  if(done) a.insertAdjacentHTML("beforeend",`<span class="pr">${{done}} done</span>`);
+}});
+</script></body></html>""")
+
+    print(f"\n[done] {len(items) - n_miss} contacts + {n_miss} AIS misses across {len(scene_ids)} "
+          f"pages -> {index} ({total_mb:.1f} MB total)")
     return 0
 
 

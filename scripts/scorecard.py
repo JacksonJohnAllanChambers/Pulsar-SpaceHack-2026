@@ -138,18 +138,24 @@ def score(context: Dict[str, Any], telemetry: Dict[str, Any], labels: Optional[D
             speed_err.append(abs(float(det["estimated_speed_knots"]) - sog))
 
     reasons: Dict[str, int] = {}
+    ghosts = 0
     for miss in unobserved:
         reasons[miss["reason"]] = reasons.get(miss["reason"], 0) + 1
         row = per_scene.get(miss["scene_id"])
-        if row is None:
-            continue
         if miss["reason"] == "CLEAR_WATER_NO_TARGET":
-            row["ais_clear_water_missed"] += 1
-        elif miss["reason"] == "IN_PORT_OR_SHORE_KEEPOUT":
+            # A reviewer who looked at the pixels and found no vessel has shown that the
+            # broadcast, not the detector, was wrong. Charging that to recall would be scoring
+            # ourselves against a ship that was never there.
+            if labels and labels.get(f"MISS_{miss['scene_id']}_{miss['mmsi']}") == "not_vessel":
+                ghosts += 1
+                continue
+            if row is not None:
+                row["ais_clear_water_missed"] += 1
+        elif miss["reason"] == "IN_PORT_OR_SHORE_KEEPOUT" and row is not None:
             row["ais_in_port"] += 1
 
     n_matched = sum(1 for d in targets if d["classification"] in MATCHED)
-    n_missed_visible = reasons.get("CLEAR_WATER_NO_TARGET", 0)
+    n_missed_visible = reasons.get("CLEAR_WATER_NO_TARGET", 0) - ghosts
     visible_broadcasters = n_matched + n_missed_visible
 
     result: Dict[str, Any] = {
@@ -164,6 +170,7 @@ def score(context: Dict[str, Any], telemetry: Dict[str, Any], labels: Optional[D
             "matched": n_matched,
             "missed_in_clear_water": n_missed_visible,
             "recall_vs_visible_ais": round(n_matched / visible_broadcasters, 3) if visible_broadcasters else None,
+            "ghost_fixes_excluded_by_review": ghosts,
             "unmatched_reasons": reasons,
         },
         "position_error_m": quantiles(pos_err_m),
