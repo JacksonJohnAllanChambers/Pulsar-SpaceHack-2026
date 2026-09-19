@@ -57,6 +57,10 @@ ais_correlation:
   speed_tolerance_knots: 6.0
   max_fix_age_hours: 3.0            # an AIS fix older than this cannot identify a contact
   speed_can_raise_anomaly: false    # speed disagreement alone is advisory, not an anomaly
+  unknown_memory_enabled: true       # remember repeated no-AIS areas between passes
+  unknown_memory_radius_nm: 0.08     # nearby detections belong to the same remembered area
+  unknown_memory_required_passes: 3  # suppress only after this many separate passes
+  # unknown_memory_path: data/outputs/unknown_contact_memory.json
 
 downlink:
   max_downlink_budget_kb: 500
