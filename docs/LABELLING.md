@@ -41,17 +41,25 @@ deployment afterwards.
 
 ---
 
-## For everyone else (2 minutes, then label)
+## For everyone else (30 seconds, then label)
 
 ```bash
 git pull
-python -m http.server 8771 --directory review
 ```
 
-Open <http://127.0.0.1:8771>, **type your name in the box at the top**, click your scene, and go.
+Then **double-click the launcher** in the `review/` folder — it starts a local server, picks a free
+port and opens your browser at the right page:
 
-> Open it through the local server, not by double-clicking the HTML. A `file://` page cannot reach
-> the shared sheet, so your verdicts would stay on your laptop.
+| | |
+| :-- | :-- |
+| Windows | `review\start-labelling.cmd` |
+| macOS / Linux | `review/start-labelling.command` |
+
+Nothing to install beyond Python itself — no packages, no virtualenv, no dataset. **Type your name
+in the box at the top**, click your scene, and go. Keep the black window open while you label.
+
+> Don't open the `.html` files directly. A `file://` page cannot reach the shared sheet, so your
+> verdicts would silently stay on your laptop. The launcher exists precisely to stop that.
 
 | Key | Verdict |
 | :-- | :-- |
