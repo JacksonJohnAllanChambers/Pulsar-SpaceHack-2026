@@ -64,7 +64,7 @@ class DetectionConfig(BaseModel):
     kelvin_tolerance_deg: float = 6.0
 
     parallax_reject_px: float = 3.0  # band-to-band displacement that marks an aircraft, not a vessel
-    min_physics_score: float = 0.35
+    min_physics_score: float = 0.20
     chip_crop_size_px: int = 64
     max_candidates_per_scene: int = 400
 

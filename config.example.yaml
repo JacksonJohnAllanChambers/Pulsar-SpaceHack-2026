@@ -38,7 +38,7 @@ detection:
   wake_min_snr: 3.5
   kelvin_half_angle_deg: 19.47      # arcsin(1/3)
   kelvin_tolerance_deg: 6.0
-  min_physics_score: 0.35
+  min_physics_score: 0.20              # let the CNN rescue borderline physics candidates
   chip_crop_size_px: 64
 
 verifier:
