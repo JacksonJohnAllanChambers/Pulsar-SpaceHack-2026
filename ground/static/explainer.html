@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Edge Sentinel / Mission Flow</title>
+<style>
+:root {
+  --ink: #081018;
+  --paper: #e9efe9;
+  --muted: #8e9d9b;
+  --line: rgba(233,239,233,.15);
+  --cyan: #57d9e8;
+  --orange: #ff9c55;
+  --green: #a8e063;
+  --red: #ff6f61;
+  --blue: #89a9ff;
+  --mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  --display: Georgia, "Times New Roman", serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; background: var(--ink); color: var(--paper); }
+body { font: 14px/1.4 "Segoe UI", sans-serif; overflow-x: hidden; }
+button { font: inherit; color: inherit; }
+.shell { min-height: 100vh; padding: 28px clamp(20px, 5vw, 76px) 34px; position: relative; overflow: hidden;
+  background: radial-gradient(circle at 78% 41%, rgba(31,83,92,.28), transparent 34%), radial-gradient(circle at 17% 88%, rgba(255,156,85,.08), transparent 28%); }
+.shell::before { content: ""; position: absolute; width: 1px; top: 0; bottom: 0; left: 9%; background: var(--line); }
+.top { display: flex; justify-content: space-between; align-items: flex-start; position: relative; z-index: 2; }
+.kicker { color: var(--cyan); font: 11px var(--mono); letter-spacing: .2em; text-transform: uppercase; }
+.brand { margin-top: 8px; font: 600 clamp(22px, 3vw, 38px)/1 var(--display); letter-spacing: -.03em; text-shadow: 0 0 28px rgba(87,217,232,.18); }
+.status { display: flex; gap: 18px; color: var(--muted); font: 11px var(--mono); text-transform: uppercase; letter-spacing: .1em; }
+.status b { color: var(--green); font-weight: 400; }
+.hero { max-width: 780px; margin: clamp(60px, 10vh, 120px) 0 35px 9%; position: relative; z-index: 2; }
+h1 { max-width: 720px; margin: 0; font: 400 clamp(48px, 8vw, 112px)/.9 var(--display); letter-spacing: -.065em; text-shadow: 0 8px 50px rgba(87,217,232,.12); }
+.lede { max-width: 500px; margin: 24px 0 0; color: #aebbb5; font-size: 16px; }
+.stage-dock { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 30px 0 22px 9%; position: relative; z-index: 3; }
+.stage-btn { background: transparent; border: 1px solid var(--line); padding: 12px 11px 10px; text-align: left; cursor: pointer; min-height: 70px; transition: .25s ease; }
+.stage-btn:hover, .stage-btn.active { background: rgba(87,217,232,.08); border-color: var(--cyan); transform: translateY(-3px); box-shadow: 0 12px 28px rgba(0,0,0,.2); }
+.stage-btn.done { border-color: rgba(168,224,99,.65); }
+.stage-num { color: var(--muted); font: 10px var(--mono); }
+.stage-name { display: block; margin-top: 9px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+.stage-line { height: 1px; background: var(--line); position: absolute; left: 0; right: 0; top: 35px; z-index: -1; }
+.stage-line i { display: block; width: 0; height: 100%; background: var(--cyan); transition: width .5s ease; }
+.scene { min-height: 440px; margin-left: 9%; border: 1px solid var(--line); position: relative; overflow: hidden; background: #0b161c; box-shadow: 0 25px 80px rgba(0,0,0,.32); }
+.scene::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(115deg, transparent 0 42%, rgba(87,217,232,.045) 49%, transparent 56%); animation: scanWash 6s linear infinite; }
+.scene-head { position: absolute; top: 18px; left: 20px; right: 20px; display: flex; justify-content: space-between; z-index: 2; color: var(--muted); font: 11px var(--mono); }
+.scene-head b { color: var(--paper); font-weight: 400; }
+#radar { position: absolute; inset: 0; width: 100%; height: 100%; }
+.story { position: absolute; left: 28px; bottom: 24px; max-width: 340px; z-index: 2; }
+.story h2 { margin: 0 0 6px; color: var(--cyan); font: 400 29px/1 var(--display); }
+.story p { margin: 0; color: #aebbb5; }
+.signal { position: absolute; right: 25px; bottom: 25px; display: flex; align-items: center; gap: 9px; color: var(--muted); font: 10px var(--mono); z-index: 2; }
+.signal i { width: 7px; height: 7px; border-radius: 50%; background: var(--orange); box-shadow: 0 0 14px var(--orange); animation: blink 1s ease-in-out infinite alternate; }
+@keyframes blink { to { opacity: .25; transform: scale(.6); } }
+@keyframes scanWash { from { transform: translateX(-60%); } to { transform: translateX(60%); } }
+.fact-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin: 1px 0 0 9%; background: var(--line); position: relative; z-index: 2; }
+.fact { background: var(--ink); padding: 16px 18px; }
+.fact small { display: block; color: var(--muted); font: 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.fact strong { display: block; margin-top: 5px; font: 24px var(--display); color: var(--paper); }
+.controls { margin: 22px 0 0 9%; display: flex; gap: 8px; align-items: center; }
+.control { border: 1px solid var(--line); background: transparent; padding: 8px 13px; cursor: pointer; font: 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+.control:hover { border-color: var(--cyan); color: var(--cyan); }
+.control.primary { background: var(--orange); border-color: var(--orange); color: var(--ink); }
+.control.primary:hover { color: var(--ink); box-shadow: 0 0 24px rgba(255,156,85,.35); transform: translateY(-2px); }
+.hint { margin-left: auto; color: var(--muted); font: 11px var(--mono); }
+@media (max-width: 760px) {
+  .shell { padding: 20px 16px 25px; } .shell::before { left: 16px; }
+  .top { display: block; } .status { margin-top: 16px; }
+  .hero, .stage-dock, .scene, .fact-row, .controls { margin-left: 0; }
+  .hero { margin-top: 65px; } h1 { font-size: 62px; }
+  .stage-dock { grid-template-columns: repeat(3, 1fr); } .stage-line { display: none; }
+  .scene { min-height: 500px; } .fact-row { grid-template-columns: 1fr; } .hint { display: none; }
+}
+</style>
+</head>
+<body>
+<main class="shell">
+  <header class="top">
+    <div><div class="kicker">MOBIUS-1 / EDGE INTELLIGENCE</div><div class="brand">Tactical Edge Sentinel</div></div>
+    <div class="status"><span>pass <b id="passId">LIVE 001</b></span><span>mode <b>offline</b></span></div>
+  </header>
+
+  <section class="hero">
+    <h1>See less.<br>Know more.</h1>
+    <p class="lede">A satellite image enters as millions of pixels. The applet turns that ocean of data into a short list of vessels worth a downlink.</p>
+  </section>
+
+  <nav class="stage-dock" aria-label="Mission stages">
+    <i class="stage-line"><i id="stageProgress"></i></i>
+    <button class="stage-btn active" data-stage="0"><span class="stage-num">01</span><span class="stage-name">Ingest</span></button>
+    <button class="stage-btn" data-stage="1"><span class="stage-num">02</span><span class="stage-name">Screen</span></button>
+    <button class="stage-btn" data-stage="2"><span class="stage-num">03</span><span class="stage-name">Detect</span></button>
+    <button class="stage-btn" data-stage="3"><span class="stage-num">04</span><span class="stage-name">Verify</span></button>
+    <button class="stage-btn" data-stage="4"><span class="stage-num">05</span><span class="stage-name">Correlate</span></button>
+    <button class="stage-btn" data-stage="5"><span class="stage-num">06</span><span class="stage-name">Downlink</span></button>
+  </nav>
+
+  <section class="scene">
+    <div class="scene-head"><span>SCENE_07 / 4-BAND VNIR</span><span id="stageReadout"><b>RAW SCENE</b> / 54.0 MB</span></div>
+    <canvas id="radar"></canvas>
+    <div class="story"><h2 id="storyTitle">The pass begins.</h2><p id="storyText">Raw reflectance arrives from the sensor. No internet, no ground model, no second chance.</p></div>
+    <div class="signal"><i></i><span id="signalText">PROCESSING ON EDGE</span></div>
+  </section>
+
+  <section class="fact-row">
+    <div class="fact"><small>input volume</small><strong id="inputFact">54.0 MB</strong></div>
+    <div class="fact"><small>current evidence</small><strong id="evidenceFact">4 bands</strong></div>
+    <div class="fact"><small>downlink goal</small><strong id="outputFact">~10 KB</strong></div>
+  </section>
+  <div class="controls"><button class="control primary" id="play">Play mission</button><button class="control" id="reset">Reset</button><span class="hint">click any stage to inspect the decision</span></div>
+</main>
+<script>
+const stages = [
+  {name:'INGEST', title:'The pass begins.', text:'Raw reflectance arrives from the sensor. No internet, no ground model, no second chance.', read:'RAW SCENE / 54.0 MB', evidence:'4 bands', signal:'PROCESSING ON EDGE'},
+  {name:'SCREEN', title:'Keep the ocean.', text:'NDWI, cloud brightness, land buffers and no-data masks remove scenes that cannot answer the question.', read:'MASKS / WATER + CLOUD + LAND', evidence:'usable water', signal:'FILTERING CLUTTER'},
+  {name:'DETECT', title:'Find the improbable pixel.', text:'Ring-CFAR hunts local NIR contrast. Connected blobs become candidates; hulls and wakes add physical evidence.', read:'CFAR / 360-RAY WAKE SEARCH', evidence:'26 candidates', signal:'SEARCHING WATER'},
+  {name:'VERIFY', title:'Ask a smaller model.', text:'Each candidate becomes a tiny four-band chip. The INT8 CNN rejects whitecaps, cloud fragments and shoreline noise.', read:'ONNX / INT8 CHIP VERIFIER', evidence:'20 accepted', signal:'VERIFYING CHIPS'},
+  {name:'CORRELATE', title:'Cross-check the story.', text:'AIS positions are dead-reckoned to shutter time. A match can confirm a vessel, expose a mismatch, or reveal a dark contact.', read:'AIS / 1:1 KINEMATIC GATE', evidence:'6 dark vessels', signal:'CHECKING AIS'},
+  {name:'DOWNLINK', title:'Transmit the decision.', text:'The image stays onboard. Coordinates, classifications and only the highest-value chips leave in a compact package.', read:'GEOJSON + CHIPS / 6.7 KB', evidence:'75 targets', signal:'READY FOR DOWNLINK'}
+];
+let current = 0, timer = null, playing = false;
+const $ = s => document.querySelector(s);
+const buttons = [...document.querySelectorAll('.stage-btn')];
+function setStage(index) {
+  current = Math.max(0, Math.min(5, index)); const data = stages[current];
+  buttons.forEach((b, i) => { b.classList.toggle('active', i === current); b.classList.toggle('done', i < current); });
+  $('#stageProgress').style.width = `${current / 5 * 100}%`;
+  $('#storyTitle').textContent = data.title; $('#storyText').textContent = data.text;
+  $('#stageReadout').innerHTML = `<b>${data.name}</b> / ${data.read}`;
+  $('#evidenceFact').textContent = data.evidence; $('#signalText').textContent = data.signal;
+  draw();
+}
+function play() {
+  clearInterval(timer); playing = true; $('#play').textContent = 'Pause mission';
+  timer = setInterval(() => { if (current >= 5) { clearInterval(timer); playing = false; $('#play').textContent = 'Replay mission'; return; } setStage(current + 1); }, 1900);
+}
+$('#play').addEventListener('click', () => { if (playing) { clearInterval(timer); playing = false; $('#play').textContent = 'Play mission'; } else { if (current >= 5) setStage(0); play(); } });
+$('#reset').addEventListener('click', () => { clearInterval(timer); playing = false; $('#play').textContent = 'Play mission'; setStage(0); });
+buttons.forEach(b => b.addEventListener('click', () => { clearInterval(timer); playing = false; $('#play').textContent = 'Play mission'; setStage(+b.dataset.stage); }));
+const canvas = $('#radar'), ctx = canvas.getContext('2d');
+function resize() { const dpr = devicePixelRatio || 1; canvas.width = canvas.clientWidth*dpr; canvas.height = canvas.clientHeight*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); draw(); }
+function draw() {
+  const w = canvas.clientWidth, h = canvas.clientHeight; ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = '#0b161c'; ctx.fillRect(0,0,w,h);
+  const time=performance.now()/1000;
+  for (let i=0;i<34;i++) { const px=(i*137)%w, py=(i*71)%h; ctx.fillStyle=`rgba(233,239,233,${.12+((i%4)*.05)})`; ctx.fillRect(px,py,1+(i%2),1+(i%2)); }
+  // A small orbital sensor hangs above the search field and sweeps the scene below.
+  const sx=w*.16, sy=92+Math.sin(time*.8)*5;
+  ctx.save(); ctx.translate(sx,sy); ctx.rotate(Math.sin(time*.35)*.08);
+  ctx.strokeStyle='rgba(87,217,232,.5)'; ctx.lineWidth=1; ctx.strokeRect(-31,-12,62,24); ctx.strokeRect(-49,-8,-18,16); ctx.strokeRect(31,-8,18,16);
+  ctx.fillStyle='#57d9e8'; ctx.fillRect(-12,-8,24,16); ctx.fillStyle='#0b161c'; ctx.fillRect(-7,-4,14,8);
+  ctx.strokeStyle='rgba(87,217,232,.25)'; ctx.beginPath(); ctx.moveTo(0,14); ctx.lineTo(0,38); ctx.stroke(); ctx.restore();
+  ctx.fillStyle='#8e9d9b'; ctx.font='10px Cascadia Mono, monospace'; ctx.fillText('ORBITAL SENSOR / ONLINE', sx-65, sy+60);
+  const grid = 42; ctx.strokeStyle = 'rgba(87,217,232,.08)'; ctx.lineWidth = 1;
+  for (let x=0;x<w;x+=grid) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
+  for (let y=0;y<h;y+=grid) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+  const cx=w*.64, cy=h*.47, radius=Math.min(w,h)*.28;
+  ctx.strokeStyle='rgba(87,217,232,.22)'; ctx.beginPath(); ctx.arc(cx,cy,radius,0,Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.arc(cx,cy,radius*.55,0,Math.PI*2); ctx.stroke();
+  const sweep=time%6/6*Math.PI*2;
+  ctx.strokeStyle='rgba(87,217,232,.7)'; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+Math.cos(sweep)*radius,cy+Math.sin(sweep)*radius); ctx.stroke();
+  const ships=[[-.42,-.15],[-.12,.3],[.18,-.22],[.36,.2],[.05,.05]];
+  ships.forEach((p,i)=>{ const visible=current>=2 || i===4; if(!visible)return; const x=cx+p[0]*w,y=cy+p[1]*h; ctx.fillStyle=i===4?'#ff9c55':'#a8e063'; ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=14;ctx.beginPath();ctx.arc(x,y,i===4?5:3,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0; if(i===4 && current>=2){const pulse=34+Math.sin(time*4)*5;ctx.strokeStyle='#ff9c55';ctx.strokeRect(x-pulse,y-pulse*.68,pulse*2,pulse*1.36);ctx.beginPath();ctx.moveTo(x+pulse,y);ctx.lineTo(x+pulse+44,y-18);ctx.stroke();ctx.fillStyle='#ff9c55';ctx.font='10px Cascadia Mono, monospace';ctx.fillText(current>=3?'VESSEL / 0.98':'CANDIDATE',x+pulse+50,y-20);}});
+  if(current>=4){ctx.setLineDash([5,5]);ctx.strokeStyle='#89a9ff';ctx.beginPath();ctx.moveTo(cx+80,cy-70);ctx.lineTo(cx+105,cy-40);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#89a9ff';ctx.font='10px Cascadia Mono, monospace';ctx.fillText('AIS PREDICTION',cx+112,cy-40);}
+  if(current>=5){ctx.fillStyle='rgba(168,224,99,.1)';ctx.fillRect(w*.72,h*.7,150,52);ctx.strokeStyle='#a8e063';ctx.strokeRect(w*.72,h*.7,150,52);ctx.fillStyle='#a8e063';ctx.font='11px Cascadia Mono, monospace';ctx.fillText('DOWNLINK READY',w*.72+12,h*.7+22);ctx.fillText('6.7 KB / GEOJSON',w*.72+12,h*.7+39);}
+  requestAnimationFrame(() => { if (document.visibilityState === 'visible') draw(); });
+}
+window.addEventListener('resize', resize); setStage(0); resize();
+</script>
+</body>
+</html>
