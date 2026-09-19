@@ -66,6 +66,15 @@ class VesselDetector(BasePipeline):
             except Exception as e:
                 scene["quality_metrics"].setdefault("warnings", []).append(f"DETECTOR_FAULT ({type(e).__name__})")
                 return None
+            memory = context.get("unknown_memory")
+            if memory is not None:
+                detections = [
+                    detection for detection in detections
+                    if not memory.is_suppressed(
+                        detection["world_coordinates"]["latitude"], detection["world_coordinates"]["longitude"],
+                        context.get("ais_protected_locations", {}).get(scene["id"], []),
+                    )
+                ]
             for det in detections:
                 chip = self.crop_chip(scene["array"], det["apex_px"], self.config.detection.chip_crop_size_px)
                 det["chip_tensor"] = chip

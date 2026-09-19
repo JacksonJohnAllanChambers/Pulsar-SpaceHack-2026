@@ -13,6 +13,8 @@ from applet.core.telemetry import EdgeTelemetryTracker
 from applet.pipelines.pipeline_registry import PipelineDispatcher
 from applet.packaging.downlink import DownlinkPackager
 from src.pyFlows.process import route_classified_targets
+from applet.core.unknown_memory import UnknownContactMemory
+from applet.pipelines.ais_correlator import AISKinematicCorrelator, _parse_iso
 
 _RASTER_KEYS = ("array", "nodata_mask", "cloud_mask", "land_mask", "sea_mask", "ndwi", "zmap", "det_mask")
 
@@ -27,6 +29,16 @@ def run_pass(
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
     """Returns (context, telemetry_summary, downlink_stats)."""
     config = config or AppletConfig()
+    memory = None
+    if config.ais_correlation.unknown_memory_enabled:
+        memory_path = config.ais_correlation.unknown_memory_path
+        if memory_path is None:
+            memory_path = os.path.join(os.path.dirname(os.path.abspath(output_dir)), "unknown_contact_memory.json")
+        memory = UnknownContactMemory(
+            memory_path,
+            config.ais_correlation.unknown_memory_radius_nm,
+            config.ais_correlation.unknown_memory_required_passes,
+        )
 
     with EdgeTelemetryTracker(label=f"{config.mission.mission_name}_{track}") as tracker:
         with tracker.stage("Ingest+Validate"):
@@ -43,7 +55,20 @@ def run_pass(
             "ais_catalog": validator.ais_catalog,
             "known_structures": validator.known_structures,
             "ingest_stats": ingest,
+            "unknown_memory": memory,
         }
+        if memory is not None:
+            correlator = AISKinematicCorrelator(config)
+            context["ais_protected_locations"] = {}
+            for scene in validator.valid_scenes:
+                shutter = _parse_iso(scene.get("shutter_time"))
+                protected = []
+                for ship in validator.ais_catalog:
+                    if abs(correlator._fix_age_hours(ship, shutter)) > config.ais_correlation.max_fix_age_hours:
+                        continue
+                    latitude, longitude = correlator._predict(ship, shutter)
+                    protected.append({"latitude": latitude, "longitude": longitude})
+                context["ais_protected_locations"][scene["id"]] = protected
 
         for stage in PipelineDispatcher.get_pipeline(track, config):
             name = stage.__class__.__name__
@@ -52,6 +77,15 @@ def run_pass(
                 context = stage.process(context)
 
         context.setdefault("classified_targets", context.get("detected_vessels", []))
+
+        if memory is not None:
+            observations = []
+            for target in context["classified_targets"]:
+                if target.get("classification") == "DARK_VESSEL":
+                    coordinates = target.get("world_coordinates", {})
+                    observations.append({"latitude": coordinates["latitude"], "longitude": coordinates["longitude"]})
+            memory.record_pass(observations)
+            memory.save()
 
         if config.downlink.write_queues:
             with tracker.stage("QueueRouter"):

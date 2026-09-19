@@ -89,6 +89,10 @@ class AISCorrelationConfig(BaseModel):
     static_mismatch_min_wake_snr: float = 8.0  # ... at this strength; piers beside berthed ships mimic short wakes
     speed_can_raise_anomaly: bool = False  # speed disagreement alone is advisory until validated on real wakes
     default_delta_hours: float = 0.0
+    unknown_memory_enabled: bool = True
+    unknown_memory_radius_nm: float = 0.08
+    unknown_memory_required_passes: int = 3
+    unknown_memory_path: Optional[str] = None
 
 
 class RuntimeConfig(BaseModel):
