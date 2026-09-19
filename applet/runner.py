@@ -3,6 +3,8 @@ Single entry point for executing a pass: used by the CLI, the benchmark harness,
 the ground-station GUI and the tests, so they all measure exactly the same code path.
 """
 
+import os
+import shutil
 from typing import Dict, Any, Optional, Tuple
 
 from applet.config import AppletConfig
@@ -51,11 +53,17 @@ def run_pass(
 
         context.setdefault("classified_targets", context.get("detected_vessels", []))
 
-        route_classified_targets(
-            context.get("screened_scenes", []),
-            context["classified_targets"],
-            "src/downlink/queues",
-        )
+        if config.downlink.write_queues:
+            with tracker.stage("QueueRouter"):
+                queue_dir = config.downlink.queue_dir
+                if queue_dir is None:
+                    # This pass owns the default queue, so it holds this pass's crops only. A
+                    # configured queue belongs to whatever scheduler is draining it: leave it alone.
+                    queue_dir = os.path.join(output_dir, "queues")
+                    shutil.rmtree(queue_dir, ignore_errors=True)
+                route_classified_targets(
+                    context.get("screened_scenes", []), context["classified_targets"], queue_dir
+                )
 
         if not keep_rasters:
             # Free the big arrays before packaging; onboard nothing downstream needs them

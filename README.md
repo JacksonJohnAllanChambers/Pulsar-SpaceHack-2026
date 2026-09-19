@@ -199,9 +199,58 @@ enough on aarch64 — not as the flight figure. What it does establish is that n
 x86: same ONNX graph, same OpenCV calls, same answers.
 
 **Bit-exact across architectures.** The same input bundle produces a downlink tarball with the *same
-SHA-256* on x86-64 Windows and ARM64 macOS — `eacda3b0dd9a64…` — including JPEG encoding and INT8 ONNX
-inference, and every scorecard metric matches to the digit (recall 0.912, precision 0.693, position
-error 46.3 m). Reproducibility is usually claimed across runs; this holds across instruction sets.
+SHA-256* — `eacda3b0dd9a64…` — on x86-64 Windows (Python 3.11), native ARM64 macOS (3.9.6) and inside the
+linux/arm64 flight container (3.10.12, different numpy / OpenCV / ONNX Runtime builds), including JPEG
+encoding and INT8 inference. Every scorecard metric matches to the digit (recall 0.912, precision 0.693,
+position error 46.3 m). Reproducibility is usually claimed across runs; this holds across instruction sets,
+operating systems and library versions.
+
+And in the judges' own container (`--memory=14g --memory-swap=14g --cpus=6 --network none`, Ubuntu 22.04
+aarch64, native on an M4 host): the 16 real scenes take **5.33 s** and peak at **2,603 MB — 18.2 % of the
+14 GB cap**.
+
+### Duty cycle: what a day in orbit actually asks of it
+
+A benchmark measures one pass. A satellite runs for months, so the question is whether the processor
+keeps up with the sensor and what it costs over a day. From the brief (4.75 m GSD at 500 km, 19.4 km
+swath, up to 1 Tbit/day, 5–12 min ground passes at ~50 Mbps):
+
+| | |
+| :-- | --: |
+| Ground track speed at 500 km | 7.06 km/s |
+| One 4096² frame (376 km²) takes | **2.75 s to capture** |
+| We process one in | **1.58 s** (M4) — **1.74× real time** |
+| 1 Tbit/day works out to | 1,242 frames = **57 min of imaging/day (4 % duty cycle)** |
+| Compute busy per day | **33 min** on an M4; 2.7 h even at 5× slower |
+| Spare RAM for a backlog | 11.9 GB = 118 frames = **5.4 min** of unprocessed imaging |
+
+The margin that matters is **2.75 s per frame**: anything slower than that cannot keep up while the
+sensor is running and must buffer. We are at 1.58 s, so hardware up to 1.7× slower than an M4 still
+runs in real time, and the 14 GB envelope absorbs a 5-minute backlog if it doesn't. The processor is
+idle ~98 % of the day either way — this workload is bursty, not sustained, which is the right shape
+for a power-limited bus.
+
+And the bottleneck it exists to solve, in one line: **102 Gbit/day of downlink capacity against
+1,000 Gbit/day of imagery — 10 %.** Our intelligence product is 11.6 MB/day, which is **1.9 seconds of
+a single ground pass**, or 0.09 % of daily capacity.
+
+**Sustained operation is tested, not assumed** (`scripts/soak.py`). Every other number here comes from
+a fresh process that exits; a real applet is long-lived, which is where leaks and thermal creep hide.
+120 consecutive passes over the 16 real scenes in **one process** on the M4:
+
+| | |
+| :-- | --: |
+| Latency drift, first quartile → last | 2.641 s → 2.653 s (**+0.5 %**) |
+| RSS | 1,619 → 1,677 MB (**+58 MB**, 3.6 %, allocator not leak) |
+| Contacts per pass | 376, every pass |
+| Distinct downlink tarballs | **1** — byte-identical across all 120 |
+
+```bash
+python scripts/soak.py -i data/real/s2_us_bundle -n 120 --quiet
+```
+
+It exits non-zero on a leak, on >15 % slowdown, or if the downlink stops being reproducible, so it
+works as a regression test rather than a one-off demonstration.
 
 ## Quick start
 
@@ -219,7 +268,7 @@ the container.
 Other tools:
 
 ```bash
-python -m pytest -q                                  # 37 tests: resilience, physics, determinism
+python -m pytest -q                                  # 59 tests: resilience, physics, determinism, flight-image closure
 python scripts/evaluate.py -i data/sample_bundle     # precision / recall / heading / AIS accuracy
 python scripts/evaluate.py --no-verifier             # ...what the CNN buys
 python scripts/generate_synthetic_data.py --random 60 --seed 4242 -o data/heldout_bundle
@@ -253,10 +302,40 @@ it never starts a pass, dispatches a fleet alert, or moves a file.
 ./scripts/run_emulated.sh          # or .\scripts\run_emulated.ps1
 ```
 
-Builds `docker/Dockerfile.arm64` (Ubuntu 22.04 / aarch64 / Python 3.10, flight requirements only) and runs it
-with `--memory=14g --memory-swap=14g --cpus=6 --network none`. On Apple Silicon this is native ARM64 and is
-the right place to take timing numbers; under QEMU on x86 it is a does-it-fit check only, exactly as the
-organisers' prep guide says.
+Builds `docker/Dockerfile.arm64` (Ubuntu 22.04 / aarch64 / Python 3.10, flight requirements only, versions
+pinned in `docker/constraints.txt`) and runs it with the prep guide's limits verbatim:
+`--memory=14g --memory-swap=14g --cpus=6 --network none`.
+
+**This has been run, not just written.** On an Apple Silicon host the image is native ARM64 — a VM, not QEMU —
+so it is also the one place a container timing means anything. What the container reports about itself:
+
+```
+arch aarch64 | Ubuntu 22.04.5 LTS | Python 3.10.12 | 6 cores | 14 GB cgroup limit | 0 network interfaces
+numpy 2.2.6  cv2 4.13.0  onnxruntime 1.20.1
+```
+
+| Inside the judges' container (M4 host) | |
+| :-- | --: |
+| Synthetic sample bundle, whole pass | 2.5 s |
+| 16 real Sentinel-2 scenes, 5,669 km² | **5.33 s** |
+| Peak RSS against the cap | **2,603 MB = 18.2 % of 14 GB** |
+| Image build | 29 s native; ~6 min for the same build under QEMU in CI |
+
+The container is ~1.8× slower than the same code run natively on macOS (5.33 s vs 3.03 s) — different Python
+and library builds, plus a virtiofs mount for the imagery. Both are honest; the container is the one the rules
+ask for.
+
+**Byte-identical across all three environments.** The same bundle produces a downlink tarball with the same
+SHA-256 — `eacda3b0dd9a64…` — on x86-64 Windows (Python 3.11), native macOS arm64 (3.9.6) and inside the
+linux/arm64 container (3.10.12), across different numpy, OpenCV and ONNX Runtime versions, and every scorecard
+metric matches to the digit.
+
+CI (`.github/workflows/tests.yml`) builds and starts the same image under QEMU on every push, and
+`tests/test_flight_image.py` stages exactly the files the Dockerfile copies and runs a pass from them — so
+flight code cannot import something the image does not ship. That test exists because it already happened:
+`applet.runner` imported `src.pyFlows.process`, which the Dockerfile never copied, and the image died with
+`ModuleNotFoundError` before reading a pixel. A native run could not have caught it, because native ships the
+whole tree. That is exactly what the prep guide means by "catching things that break".
 
 ## Input bundle
 
@@ -283,6 +362,11 @@ speed, hull size, wake length, physics / CNN / fused confidence, matched MMSI, p
 `scene_report.json` (quality verdicts, funnel), `manifest.json`, and `chips/*.jpg` for anomalies only, highest
 priority first, until the byte budget is spent. Known, AIS-consistent traffic never earns a chip.
 `edge_telemetry.json` (timings, RAM, cores) is written beside the tarball.
+
+Beside it, `queues/priority` (no AIS match) and `queues/nonPriority` hold a wider context crop of every
+target for the file-queue downlink scheduler in `src/pyFlows` (three priority images per non-priority one).
+They are not part of the tarball or its byte budget; `downlink.write_queues: false` turns them off and
+`downlink.queue_dir` points them at a running scheduler, which is what the ground console does.
 
 ## Real data
 
@@ -336,7 +420,7 @@ simulation/        scene renderer (ground-side)
 training/          verifier training, ONNX export, INT8 quantisation
 ground/            FastAPI + single-page console
 scripts/           setup_data (start here), bundle generator, Sentinel-2 / NOAA fetchers, evaluate, benchmark
-tests/             37 tests
+tests/             59 tests
 docker/            Dockerfile.arm64
 docs/              SETUP (collaborators start here), hackathon rules, rubric, track notes, pitch template
 ```

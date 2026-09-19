@@ -58,15 +58,15 @@ only visualises what the satellite computed."
 ### Slide 4 — Edge relevance (rubric 25%)
 **Visual:** the measured budget table.
 
-| Workload | Wall clock | Peak RAM | Raw → downlink |
-| :-- | --: | --: | --: |
-| 6 × 1024² synthetic scenes | 0.9 s | 0.41 GB (2.9% of 14 GB) | 54 MB → 6.8 KB |
-| + one 4096² full swath | 7.2 s | 1.43 GB (10%) | 182 MB → 14 KB |
-| 16 × 2048² real Sentinel-2 scenes | 12.2 s | 2.44 GB (17%) | 5,669 km² of water searched |
+| Workload | ARM64 (M4, 6 threads) | x86-64 dev box | Peak RAM (ARM64) | Raw → downlink |
+| :-- | --: | --: | --: | --: |
+| One 4096² full swath (23.1 Mpx, 19.4 km) | 1.61 s | 7.2 s | 2.09 GB (14.6% of 14 GB) | 182 MB → 9.4 KB |
+| 16 × 2048² real Sentinel-2 scenes, 5,669 km² | 3.03 s | 10.4 s | 2.59 GB (18%) | 316 MB → 11 KB |
 
-**Say plainly:** "We had no Jetson. These are x86 dev-box numbers; ARM64 numbers come from the same
-container running natively on Apple Silicon. TensorRT and DLA are wired but unvalidated, and we will
-not pretend otherwise. What *is* validated is the CPU path — the one that runs in your emulated
+**Say plainly:** "We had no Jetson. The ARM64 column is the same code run natively on an Apple M4 with
+six threads — not inside the container, and an M4 is faster than an Orin NX, so read it as an upper
+bound. The same bundle gives a byte-identical tarball on both architectures. TensorRT and DLA are
+wired but unvalidated, and we will not pretend otherwise. What *is* validated is the CPU path — the one that runs in your emulated
 container with no GPU."
 
 ### Slide 5 — Evidence on real data (rubric 30%)

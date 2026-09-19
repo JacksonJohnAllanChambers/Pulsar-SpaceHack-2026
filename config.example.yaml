@@ -63,3 +63,5 @@ downlink:
   include_target_chips: true
   chip_jpeg_quality: 70
   chip_min_priority: 0.5            # known, AIS-consistent traffic does not earn a chip
+  write_queues: true                # context crops for the src/pyFlows downlink scheduler
+  # queue_dir: src/downlink/queues  # default is <output>/queues; set it to feed a running scheduler
