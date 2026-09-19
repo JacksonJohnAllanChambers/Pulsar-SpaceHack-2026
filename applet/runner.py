@@ -10,6 +10,7 @@ from applet.core.validator import InputBundleValidator
 from applet.core.telemetry import EdgeTelemetryTracker
 from applet.pipelines.pipeline_registry import PipelineDispatcher
 from applet.packaging.downlink import DownlinkPackager
+from src.pyFlows.process import route_classified_targets
 
 _RASTER_KEYS = ("array", "nodata_mask", "cloud_mask", "land_mask", "sea_mask", "ndwi", "zmap", "det_mask")
 
@@ -49,6 +50,12 @@ def run_pass(
                 context = stage.process(context)
 
         context.setdefault("classified_targets", context.get("detected_vessels", []))
+
+        route_classified_targets(
+            context.get("screened_scenes", []),
+            context["classified_targets"],
+            "src/downlink/queues",
+        )
 
         if not keep_rasters:
             # Free the big arrays before packaging; onboard nothing downstream needs them
