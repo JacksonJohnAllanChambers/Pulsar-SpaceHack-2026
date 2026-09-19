@@ -10,6 +10,8 @@ import numpy as np
 MIN_PADDING_PX = 64
 MAX_PADDING_PX = 160
 PADDING_HULL_LENGTHS = 1.5
+REFLECTANCE_WHITE = 0.35
+DISPLAY_GAMMA = 2.2
 
 
 def padding_pixels(
@@ -71,8 +73,20 @@ def _display_image(crop: np.ndarray) -> np.ndarray:
     if crop.shape[2] == 1:
         return cv2.cvtColor(crop[:, :, 0], cv2.COLOR_GRAY2BGR)
     if crop.shape[2] >= 3:
+        if np.issubdtype(crop.dtype, np.floating):
+            return _reflectance_to_bgr(crop[:, :, :3])
         return crop[:, :, :3]
     raise ValueError("crop must contain at least one band")
+
+
+def _reflectance_to_bgr(rgb: np.ndarray) -> np.ndarray:
+    """Pipeline scenes are 0..1 reflectance in R,G,B order; written as-is they encode as black.
+
+    Same fixed, scene-independent stretch as the tarball chips (VesselDetector.encode_chip_jpeg),
+    so a crop is byte-identical from run to run.
+    """
+    stretched = np.clip(np.nan_to_num(rgb) / REFLECTANCE_WHITE, 0.0, 1.0) ** (1.0 / DISPLAY_GAMMA)
+    return (stretched[:, :, ::-1] * 255.0 + 0.5).astype(np.uint8)
 
 
 def write_vessel_crops(

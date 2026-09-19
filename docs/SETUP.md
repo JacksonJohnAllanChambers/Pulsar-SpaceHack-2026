@@ -127,7 +127,12 @@ Writes `applet/models/verifier_{fp32,int8}.onnx` and `model_card.json` (about 6 
 
 `.\scripts\run_emulated.ps1` on Windows. The image renders its own sample bundle at build time and runs with
 `--memory=14g --memory-swap=14g --cpus=6 --network none`. Take timing numbers on an ARM64 host (Apple Silicon runs
-it natively); under QEMU on x86 it only proves that it fits. **As of the first commit this build has not been run.**
+it natively); under QEMU on x86 it only proves that it fits. Versions are pinned in `docker/constraints.txt`.
+
+Nobody on the team has Docker on an ARM64 host, so two things stand in for a local build: CI builds and starts
+the image under QEMU on every push (`.github/workflows/tests.yml`, job `image`), and `tests/test_flight_image.py`
+stages exactly the files the Dockerfile copies and runs a pass from them. If you add an import to flight code
+from outside `applet/`, that test tells you to add a `COPY` line.
 
 ## Windows gotchas
 

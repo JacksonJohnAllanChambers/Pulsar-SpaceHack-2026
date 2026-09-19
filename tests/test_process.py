@@ -56,3 +56,14 @@ def test_dark_vessel_crop_filename_carries_alert_coordinates(tmp_path):
     outputs = process.write_vessel_crops(image, [target], tmp_path / "priority", tmp_path / "nonPriority", 10.0)
 
     assert outputs[0].name == "alert-v1__S2_LONGBEACH_T001__S2_LONGBEACH__lat-33.680000__lon--118.170000__DARK_VESSEL.jpg"
+
+def test_reflectance_crops_are_visible_not_black(tmp_path):
+    # Pipeline scenes are float reflectance in R,G,B,NIR order; written unscaled they encoded as black
+    image = np.full((200, 200, 4), 0.02, dtype=np.float32)
+    image[90:110, 90:110, 0] = 0.30  # a red hull
+    target = {"detection_id": "T1", "apex_px": [100, 100], "hull_length_m": 30, "matched_vessel": None}
+
+    (path,) = process.write_vessel_crops(image, [target], tmp_path / "priority", tmp_path / "nonPriority", 10.0)
+
+    blue, green, red = cv2.imread(str(path))[64, 64]
+    assert red > 200 and red > blue + 100 and red > green + 100

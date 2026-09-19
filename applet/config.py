@@ -102,6 +102,10 @@ class DownlinkConfig(BaseModel):
     include_target_chips: bool = True
     chip_jpeg_quality: int = 70
     chip_min_priority: float = 0.5
+    # Full-context crops for the file-queue downlink scheduler (src/pyFlows). None keeps them with
+    # the rest of the pass under <output_dir>/queues; flight code never writes into its own source tree.
+    write_queues: bool = True
+    queue_dir: Optional[str] = None
 
 
 class AppletConfig(BaseModel):

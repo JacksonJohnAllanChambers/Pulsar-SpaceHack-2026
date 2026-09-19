@@ -16,13 +16,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /workspace
 
 # Dependencies are baked in at build time: the container runs with --network none
-COPY requirements.txt /workspace/
-RUN pip3 install --no-cache-dir -r requirements.txt
+COPY requirements.txt docker/constraints.txt /workspace/
+RUN pip3 install --no-cache-dir --only-binary=:all: -r requirements.txt -c constraints.txt
 
 COPY pyproject.toml config.example.yaml /workspace/
 COPY applet/ /workspace/applet/
 COPY simulation/ /workspace/simulation/
 COPY scripts/ /workspace/scripts/
+# applet.runner routes crops through the team's queue module. tests/test_flight_image.py fails
+# if flight code ever imports something these COPY lines do not ship.
+COPY src/pyFlows/ /workspace/src/pyFlows/
 
 # The sample bundle is rendered at build time (seeded, reproducible) rather than committed
 RUN python3 scripts/generate_synthetic_data.py --output /workspace/data/sample_bundle \

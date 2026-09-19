@@ -35,6 +35,9 @@ from scripts.evaluate import score_context  # noqa: E402
 DATA_DIR = os.path.join(ROOT, "data")
 OUTPUT_DIR = os.path.join(DATA_DIR, "outputs", "gui")
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+# The console is the one caller that feeds the file-queue downlink scheduler (src/pyFlows/workflow.py),
+# which drains src/downlink/queues into src/sent. Every other caller keeps crops under its output dir.
+QUEUE_DIR = os.path.join(ROOT, "src", "downlink", "queues")
 SENT_DIR = os.path.join(ROOT, "src", "sent")
 FLEET_ALERT_PATH = os.path.join(DATA_DIR, "outputs", "fleet_alerts.json")
 FLEET_OUTPUT_DIR = os.path.join(ROOT, "src", "fleet_alerts")
@@ -114,6 +117,7 @@ def run(req: RunRequest):
         raise HTTPException(400, "bundle must be a directory under data/")
 
     config = AppletConfig.load_from_yaml(os.path.join(ROOT, "config.example.yaml"))
+    config.downlink.queue_dir = QUEUE_DIR
     if req.cfar_k_sigma is not None:
         config.detection.cfar_k_sigma = req.cfar_k_sigma
     if req.min_physics_score is not None:

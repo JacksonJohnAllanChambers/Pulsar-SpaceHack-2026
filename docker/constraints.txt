@@ -1,0 +1,17 @@
+# Exact versions for the flight image (Python 3.10, linux/aarch64), so the image the judges build
+# is the one we measured and a new upstream release cannot change it under us.
+#
+# Where Python 3.10 allows, these are the versions of the dev box that produced the README
+# numbers. numpy and tifffile are the newest releases that still support 3.10 (the dev box runs
+# 3.11). Every pin was resolved against cp310 manylinux aarch64 wheels, no source builds:
+#   pip install --dry-run --ignore-installed --only-binary=:all: --python-version 3.10 \
+#       --platform manylinux2014_aarch64 --platform manylinux_2_28_aarch64 --target /tmp/x \
+#       -r requirements.txt -c docker/constraints.txt
+numpy==2.2.6
+opencv-python-headless==4.13.0.92
+pillow==11.3.0
+pydantic==2.11.10
+pyyaml==6.0.2
+psutil==7.1.0
+tifffile==2025.5.10
+onnxruntime==1.20.1
