@@ -75,3 +75,6 @@ data/real
 .claude/
 data/raw/*
 !data/raw/.gitkeep
+
+# Local hackathon reference guide
+Hackathon_Project_Track_Guide.md
