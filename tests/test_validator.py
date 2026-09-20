@@ -25,6 +25,10 @@ def test_corrupt_and_empty_files_are_reported_not_raised(tmp_path):
 
     arr, _, status = load_scene_raster(str(bad))
     assert arr is None and not status["is_valid"] and "DECODE_ERROR" in status["error"]
+    # Downlinked verbatim, so it may name the exception class but never quote the library: the
+    # message text differs between tifffile versions and broke cross-platform byte identity.
+    kind, _, detail = status["error"].partition(": ")
+    assert kind == "DECODE_ERROR" and detail.isidentifier()
     arr, _, status = load_scene_raster(str(empty))
     assert arr is None and status["error"] == "ZERO_BYTE_FILE"
     arr, _, status = load_scene_raster(str(tmp_path / "missing.tif"))
