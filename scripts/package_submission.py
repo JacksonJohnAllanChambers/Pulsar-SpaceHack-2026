@@ -119,7 +119,10 @@ def main() -> int:
     record = {
         "name": NAME,
         "commit": commit,
-        "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
+        # The ref asked for, not the checked-out branch: packaging origin/main from a Jack
+        # checkout used to record "Jack", which is the one field nobody would think to doubt.
+        "packaged_ref": args.ref,
+        "contains_ref": sorted(git("branch", "-a", "--contains", commit).replace("*", " ").split()),
         "packaged_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "archive": os.path.basename(archive),
         "archive_sha256": sha256(archive),
