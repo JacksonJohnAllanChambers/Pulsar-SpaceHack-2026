@@ -390,10 +390,48 @@ The invariant is **degrade the evidence, never the alert**:
   exactly that reason.
 * **SURVEY** drops the wake ray transform, the most expensive per-candidate stage. That costs heading,
   speed and the wake term of the physics score: **5 AIS-confirmed ships lost**.
-* **BEACON** is physics-only with a hard candidate cap and no CNN. Positions still go down, but false
-  alarms rise **6.7×** and every contact is UNVERIFIED. *The applet never stops reporting; it only
-  stops explaining.* Note the downlink goes back **up** — 121 alerts cost more than 18 alerts plus
-  their chips.
+* **BEACON** is physics-only with a hard candidate cap and no CNN. Positions still go down and every
+  contact is UNVERIFIED. *The applet never stops reporting; it only stops explaining.* On this
+  synthetic bundle false alarms rise **6.7×** and the downlink goes back **up** — 121 alerts cost more
+  than 18 alerts plus their chips. **On real imagery it behaves differently: see the next table.**
+
+### The same table on real imagery — **[M]**, 16 US Sentinel-2 scenes
+
+The synthetic table above was the honest limit of what we had measured, and it is flagged as such
+everywhere it appears. So we ran the identical sweep against the real benchmark:
+
+```bash
+python scripts/orbit_pass_sim.py --input data/real/s2_us_bundle --repeats 5
+```
+
+| Rung | Power cap | Wall s | CPU s | Cores | Peak RSS | Candidates | Verified | Dark | AIS-confirmed | Mismatches | Chips | Downlink |
+| :-- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |
+| **FULL** | 25 W | 11.30 | 28.12 | 2.51 | 2,971 MB | 807 | 375 | 251 | 109 | **15** | 259 | 87.3 KB |
+| **REDUCED** | 15 W | 12.49 | 27.16 | 2.23 | 2,909 MB | 807 | **375** | **251** | **109** | **15** | 0 | **22.5 KB** |
+| **SURVEY** | 15 W | 17.06 | 23.81 | 1.41 | 2,829 MB | 612 | 310 | 193 | 116 | 1 | 0 | 18.8 KB |
+| **BEACON** | 10 W | 16.70 | 23.67 | 1.43 | 2,815 MB | 379 | 279 | 175 | 104 | 0 | 0 | 16.5 KB |
+
+**REDUCED is free on real imagery too, and that is the claim that mattered.** Byte for byte the same
+807 candidates, 375 verified contacts, 251 dark vessels, 109 AIS-confirmed ships and all 15 kinematic
+mismatches — for a downlink of **22.5 KB against 87.3 KB, a 74 % cut**. The rung exists to drop JPEG
+evidence crops, and on 16 real scenes that is exactly and only what it does.
+
+**Two things the synthetic bundle got wrong, which is why this table needed running.**
+
+* **AIS-confirmed appears to *rise* at SURVEY (109 → 116). It is a loss, not a gain.** Dropping the
+  wake ray transform removes the evidence that raises `AIS_KINEMATIC_MISMATCH`, so mismatches collapse
+  **15 → 1** and those contacts are re-labelled as ordinary confirmed traffic. Count the total instead:
+  AIS matches fall **124 → 117 → 104** down the ladder. The spoofing detector — the thing that catches
+  a ship lying about its course — is effectively dead below REDUCED. The synthetic bundle produced only
+  10 mismatches and hid this.
+* **BEACON does not multiply false alarms on real imagery.** On synthetic scenes it raised dark-vessel
+  alerts 6.7× (18 → 121), and we published that. On real scenes dark alerts *fall* 251 → 175, because
+  the per-scene candidate cap binds long before the clutter does: 807 candidates → 379. BEACON's real
+  failure mode is **silently dropping contacts**, not flooding the operator — the opposite of what we
+  said, and worse, because a flood is visible and a silent drop is not.
+
+Wall-clock deepens down the ladder (11.3 s → 16.7 s) rather than shrinking, which is the same
+measurement problem as below; the deterministic columns are the ones to read.
 
 ### No speed number appears here, on purpose — **[U]**
 
@@ -447,7 +485,94 @@ the physics gate first.
 
 ---
 
-## 9. Where the numbers came from
+## 9. How this compares to published work
+
+**The short answer: our detection quality is in the same range as the xView3 winners, on a far smaller
+and easier evaluation, with a ground-truth protocol that cannot count the vessels we missed — and at
+roughly 2–3× their throughput on a CPU instead of a V100.** Every part of that sentence needs its
+caveat, so here they all are.
+
+### The benchmark that matches this task: xView3-SAR
+
+[xView3-SAR](https://arxiv.org/abs/2206.00897) is the closest published analogue — dark-vessel
+detection in medium-resolution imagery, ground-truthed by AIS correlation plus expert annotators. It
+is much bigger than anything we built: 991 Sentinel-1 scenes averaging 29,400 × 24,400 px, **243,018
+verified objects** over 43.2 million km², across global sea states.
+
+| xView3 Challenge, holdout partition | Aggregate | **F1 detection** | F1 close-to-shore |
+| :-- | --: | --: | --: |
+| 1. BloodAxe | 0.6177 | **0.7702** | 0.5310 |
+| 2. selim_sef | 0.6047 | 0.7629 | 0.4768 |
+| 5. Kohei | 0.5717 | 0.7342 | 0.4527 |
+| xView3 reference model (Faster-RCNN) | 0.1904 | 0.4302 | 0.1293 |
+| **This applet, 16 US Sentinel-2 scenes** | — | **≤ 0.805** | **not attempted** |
+
+Our F1 uses a consistent population: TP = 242 hand-confirmed vessels among our contacts, FP = 105
+adjudicated false alarms, FN = 12 AIS-visible broadcasters missed in clear water →
+F1 = 2·242 / (2·242 + 105 + 12) = **0.805**.
+
+### Five reasons that number is not a like-for-like win
+
+1. **Our FN is a lower bound, so our F1 is an upper bound.** We adjudicated *our own detector's
+   output*. A dark vessel we never detected leaves no trace in our labels — only AIS-broadcasting
+   misses are countable. xView3's annotators labelled the imagery independently of any detector, so
+   their recall denominator is honest and ours is optimistic. This is the single biggest caveat.
+2. **We exclude the hard case by design.** The 200 m shoreline keep-out drops everything close to
+   shore. That is exactly the sub-task where the xView3 winner falls from 0.770 to **0.531** — the
+   hardest part of the problem, and we simply do not attempt it.
+3. **Different sensor, different difficulty.** SAR sees through cloud, at night, in any weather.
+   Our VNIR payload needs daylight and a gap in the cloud; two of our eight sample scenes are rejected
+   before detection for exactly that reason. xView3 models work in conditions where we produce nothing
+   at all.
+4. **Scale.** 243,018 objects across global waters versus our **347 adjudicated contacts** on 16 US
+   coastal scenes, mostly calm and nearly cloud-free. Ours is a directional result on an easier
+   distribution.
+5. **They solve more of the problem.** The aggregate score also covers vessel/fishing classification
+   (F1 0.939 / 0.843 for the winner) and length estimation. We classify nothing beyond
+   broadcasting-or-not and our length estimate reads ~15 % short.
+
+So: **comparable detection F1 on an easier subset, measured more permissively.** Not a win, and we
+would not claim one in front of a judge.
+
+### Where we are genuinely ahead: cost per pixel
+
+| | Hardware | Throughput | Tag |
+| :-- | :-- | --: | :-- |
+| xView3 1st place | 1× Tesla V100 (~300 W), 60 GB RAM | ~13 min per 29,400 × 24,400 scene ≈ **0.9–1.8 Mpx/s** | published |
+| **This applet** | x86-64 CPU, **no GPU**, 1.65 of 6 cores | 23.07 Mpx in 7.30 s = **3.16 Mpx/s** | [M] |
+
+The challenge required inference "in under 15 minutes on a computer with one Tesla V100 GPU, 60 GB
+RAM, and a server-grade CPU". We do the detection half of that work **2–3× faster with no GPU at all,
+in 1.6 GB of RAM** — which is the entire argument for running onboard rather than downlinking. The
+caveat: they run more tasks per pixel, and their figure is approximate and includes reading a 2.4 GB
+band. This is a fair order-of-magnitude comparison, not a controlled benchmark.
+
+### Optical Sentinel-2 work, and why those numbers look better than everyone's
+
+Published Sentinel-2 vessel detection reports numbers well above ours — one 2024 method reports
+precision 96.4 %, recall 94.3 %, F1 95.2 % against AIS. **Check the evaluation protocol before
+comparing.** Most optical ship-detection work scores on pre-cropped patches centred on ships, where
+the position match is true by construction and open ocean never gets the chance to produce a false
+alarm. Scoring a whole scene end to end — where 5,672 km² of water can raise a contact anywhere — is a
+different and much harder measurement.
+
+**We have that effect measured inside this repo**, which is why we insist on it: our ice-retrained
+verifier improved held-out *chip* AUC from 0.921 to 0.954 while end-to-end *scene* precision **fell**
+from 0.697 to 0.655 (§3). Chip-level metrics moved one way and the thing we actually care about moved
+the other. Our own SEN2MS chip scores (§5, AUC 0.979) are the flattering kind of number; the 0.697 is
+the honest one.
+
+### What we would need to make this a real comparison
+
+Run this detector on the xView3 holdout split and submit against their metric. We cannot: xView3 is
+Sentinel-1 SAR and this applet is a VNIR optical detector whose entire physics — NDWI water masking,
+NIR contrast, sun-glint handling, the wake ray transform — has no meaning on a backscatter image.
+The honest statement is the one above: same ballpark, easier problem, more permissive protocol,
+much cheaper per pixel.
+
+---
+
+## 10. Where the numbers came from
 
 | Input | Source | Licence |
 | :-- | :-- | :-- |
@@ -463,7 +588,7 @@ Considered and **not** used: MASATI (research-use-only licence, RGB with no NIR)
 
 ---
 
-## 10. What we will not claim
+## 11. What we will not claim
 
 * **No Jetson.** No TensorRT, DLA, power or thermal validation. Every bundle carries
   `"validated_on_hardware": false`.
@@ -478,7 +603,11 @@ Considered and **not** used: MASATI (research-use-only licence, RGB with no NIR)
 * Hull length reads ~15 % short temperate, **59.7 % short Arctic (n=2)**.
 * **Wake-derived speed fired on 0 of 375 US contacts.** It is advisory and cannot raise an anomaly alone.
 * **The Kelvin-arm measurement has never fired**, even on synthetic ships rendered with arms.
-* The governor's rung table is measured on **synthetic** tuning scenes, not real imagery.
+* The governor's rung table is now measured on **both** synthetic tuning scenes and the 16 real
+  scenes, and they disagree below REDUCED — trust the real one (§7).
+* **We have not run this detector on xView3 or any other public benchmark**, so "comparable F1" (§9)
+  is a cross-benchmark reading, not a ranked result. Our recall denominator cannot count dark vessels
+  we never detected, which makes our F1 an upper bound.
 * Ships moored alongside, or within 200 m of land, are not reported — by design.
 
 ---
