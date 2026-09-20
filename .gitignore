@@ -52,14 +52,10 @@ Thumbs.db
 *.bin
 data/outputs/*
 !data/outputs/.gitkeep
-# Written by a pass or by the downlink scheduler (src/pyFlows/workflow.py) and rewritten on every run
+# Written by the applet pass or downlink scheduler and rewritten on every run
 src/fleet_alerts/
 src/downlink/queues/
 src/sent/
-src/rawImages/
-src/processing/
-src/noShipDetected/
-src/deleted/
 .keys/
 # All datasets are rebuilt by `python scripts/setup_data.py` (see docs/SETUP.md). The entries without a
 # trailing slash also match the junctions / symlinks that --data-root creates.
@@ -78,3 +74,6 @@ data/raw/*
 
 # Generated cinematic media and render intermediates
 /.animation/
+
+# Committed once by accident: a render virtualenv
+.cpython-render-venv/

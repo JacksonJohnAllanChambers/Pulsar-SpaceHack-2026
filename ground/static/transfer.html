@@ -20,14 +20,14 @@ h1 { margin:0; font-size:20px; font-weight:650; letter-spacing:.02em; } .overvie
 .filters { display:flex; gap:8px; flex-wrap:wrap; } .filter { color:var(--mute); background:transparent; padding:4px 8px; border-radius:4px; } .filter.active { color:#071016; background:var(--cyan); border-color:var(--cyan); font-weight:650; }
 .lanes { display:grid; grid-template-columns:repeat(3,minmax(190px,1fr)); gap:10px; } .lane { min-height:178px; border:1px solid var(--line); background:var(--panel); border-radius:6px; overflow:hidden; }
 .lane-head { display:flex; align-items:center; justify-content:space-between; padding:9px 10px; border-bottom:1px solid var(--line); } .lane-title { display:flex; align-items:center; gap:7px; font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--mute); }
-.dot { width:8px; height:8px; border-radius:50%; background:var(--cyan); } .incoming .dot { background:var(--cyan); }.processing .dot{background:var(--amber)}.priority .dot{background:var(--coral)}.standard .dot{background:var(--violet)}.no_ship .dot{background:var(--mute)}.sent .dot{background:var(--green)}
+.dot { width:8px; height:8px; border-radius:50%; background:var(--cyan); } .priority .dot{background:var(--coral)}.standard .dot{background:var(--violet)}.sent .dot{background:var(--green)}
 .count { font-family:var(--mono); color:var(--ink); } .file-list { max-height:227px; overflow:auto; } .file { position:relative; width:100%; display:grid; grid-template-columns:42px minmax(0,1fr); gap:8px; text-align:left; border:0; border-radius:0; border-bottom:1px solid #1d2c36; padding:8px 10px; background:transparent; }
 .file:hover,.file.selected { background:var(--panel2); } .file img,.thumb-empty { width:42px; height:42px; object-fit:cover; background:#050a0e; border:1px solid var(--line); border-radius:3px; image-rendering:pixelated; }.thumb-empty{display:grid;place-items:center;color:var(--mute);font:10px var(--mono)}.thumbnail-pending,.transfer-pending{visibility:hidden}
 .transfer-ghost { position:fixed; z-index:20; margin:0; pointer-events:none; box-shadow:0 12px 26px rgba(0,0,0,.45); transform-origin:center; will-change:transform,opacity; }
 .transfer-arrival { animation:transfer-settle .36s ease-out; } @keyframes transfer-settle { from { filter:brightness(1.35); } to { filter:brightness(1); } }
 .file-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--mono); font-size:11px; }.file-meta{color:var(--mute);font-size:10.5px;margin-top:3px}.empty{padding:18px 10px;color:var(--mute);font-size:12px}.path{padding:5px 10px;color:var(--mute);border-top:1px solid #1d2c36;font:10px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .progress { display:grid; grid-template-columns:1fr auto; align-items:center; gap:6px; margin-top:5px; color:var(--amber); font:10px var(--mono); }.progress-track { height:4px; overflow:hidden; border-radius:3px; background:#081016; }.progress-track i { display:block; height:100%; background:var(--amber); transition:width .18s linear; }.sent .progress { color:var(--green); }.sent .progress-track i { background:var(--green); }
-.timeline { margin-top:18px; border-top:1px solid var(--line); padding-top:13px; }.section-title { margin:0 0 8px; color:var(--mute); text-transform:uppercase; letter-spacing:.1em; font-size:10.5px; }.events { display:grid; grid-template-columns:repeat(auto-fill,minmax(235px,1fr)); gap:7px; }.event { border-left:3px solid var(--cyan); background:var(--panel); padding:8px 9px; min-width:0; }.event.downlinked{border-color:var(--green)}.event.queued_priority{border-color:var(--coral)}.event.processing{border-color:var(--amber)}.event.no_ship{border-color:var(--mute)}.event-name{font-family:var(--mono);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.event-meta{color:var(--mute);font-size:10.5px;margin-top:3px}
+.timeline { margin-top:18px; border-top:1px solid var(--line); padding-top:13px; }.section-title { margin:0 0 8px; color:var(--mute); text-transform:uppercase; letter-spacing:.1em; font-size:10.5px; }.events { display:grid; grid-template-columns:repeat(auto-fill,minmax(235px,1fr)); gap:7px; }.event { border-left:3px solid var(--cyan); background:var(--panel); padding:8px 9px; min-width:0; }.event.downlinked{border-color:var(--green)}.event.queued_priority{border-color:var(--coral)}.event-name{font-family:var(--mono);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.event-meta{color:var(--mute);font-size:10.5px;margin-top:3px}
 .detail { border-left:1px solid var(--line); background:#0b151d; padding:18px; overflow:auto; }.detail h2 { margin:0; font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); }.detail-empty { color:var(--mute); margin-top:14px; }.detail-image { width:100%; aspect-ratio:1; object-fit:contain; background:#050a0e; border:1px solid var(--line); margin:14px 0; image-rendering:pixelated; }.info { display:grid; grid-template-columns:1fr auto; gap:6px 10px; font-size:12px; }.info span { color:var(--mute); }.info b { font-family:var(--mono); font-size:11px; text-align:right; overflow-wrap:anywhere; }.location { margin-top:15px; padding-top:12px; border-top:1px solid var(--line); }.location code { display:block; margin-top:6px; color:#b7c6d2; font:10.5px/1.45 var(--mono); overflow-wrap:anywhere; }
 .dark-vessel-badge { position:absolute; z-index:1; top:6px; left:39px; width:16px; height:15px; display:grid; place-items:end center; padding-bottom:1px; clip-path:polygon(50% 0,100% 100%,0 100%); background:var(--amber); color:#071016; font:700 10px/1 var(--mono); }.encryption-badge { position:absolute; z-index:1; top:6px; right:7px; width:16px; height:16px; color:var(--green); filter:drop-shadow(0 0 3px rgba(84,212,155,.45)); }.encryption-badge svg { display:block; width:100%; height:100%; fill:currentColor; }.pings { margin-top:18px; border-top:1px solid var(--line); padding-top:13px; }.ping { position:relative; display:grid; grid-template-columns:46px 1fr; gap:9px; padding:8px 0; border-bottom:1px solid #1d2c36; cursor:pointer; }.ping .dark-vessel-badge{left:41px}.ping .encryption-badge{right:2px}.ping img,.ping .thumb-empty{width:46px;height:46px}.ping b{font-size:12px}.ping span{display:block;color:var(--mute);font-size:10.5px;margin-top:2px}
 @media(max-width:1050px){.lanes{grid-template-columns:repeat(2,minmax(190px,1fr))}.layout{grid-template-columns:minmax(0,1fr) 290px}}@media(max-width:760px){header{gap:9px;padding:9px 12px}.brand span{display:none}.layout{display:block}.board{padding:12px}.overview{display:block}.filters{margin-top:10px}.lanes{grid-template-columns:1fr}.detail{border-left:0;border-top:1px solid var(--line);min-height:340px}.file-list{max-height:190px}}
@@ -46,15 +46,15 @@ h1 { margin:0; font-size:20px; font-weight:650; letter-spacing:.02em; } .overvie
 </header>
 <div class="layout">
   <main class="board">
-    <div class="overview"><div><h1>Image Transfer Flow</h1><p>Read-only view of image movement from local intake through processing, queues, downlink, and receiving fleet pings.</p></div><div class="filters" id="filters"></div></div>
+    <div class="overview"><div><h1>Image Transfer Flow</h1><p>Read-only view of applet-generated queues, downlink delivery, and receiving fleet pings.</p></div><div class="filters" id="filters"></div></div>
     <section class="lanes" id="lanes"></section>
     <section class="timeline"><h2 class="section-title">Recent transitions</h2><div class="events" id="events"></div></section>
   </main>
   <aside class="detail"><h2>Transfer detail</h2><div id="detail"><p class="detail-empty">Select an image or fleet ping to inspect its current location and delivery metadata.</p></div><section class="pings"><h2>Fleet pings <span id="pingCount"></span></h2><div id="pings"></div></section></aside>
 </div>
 <script>
-const LABELS = { arrived:'Arrived', processing:'Processing', queued_priority:'Priority queue', queued_standard:'Standard queue', no_ship:'No ship', downlinked:'Downlinked' };
-const PATHS = { incoming:'src/rawImages', processing:'src/processing', priority:'src/downlink/queues/priority', standard:'src/downlink/queues/nonPriority', no_ship:'src/noShipDetected', sent:'src/sent' };
+const LABELS = { queued_priority:'Priority queue', queued_standard:'Standard queue', downlinked:'Downlinked' };
+const PATHS = { priority:'src/downlink/queues/priority', standard:'src/downlink/queues/nonPriority', sent:'src/sent' };
 const DEMO_FLEETS = [
   {id:'longbeach',name:'Long Beach Response',latitude:33.71,longitude:-118.20,distance_nm:'3.4'},
   {id:'norfolk',name:'Norfolk Coastal Watch',latitude:36.92,longitude:-76.05,distance_nm:'5.1'},
@@ -79,9 +79,9 @@ function render() { renderFilters(); renderLanes(); renderEvents(); renderPings(
 function selectFile(id) { const file = activeState().files.find(item => item.id === id); if (file) { selected = {kind:'file',value:file,id:file.id}; render(); } }
 function selectPing(index) { const ping = activeState().fleet_pings[index]; if (ping) { selected = {kind:'ping',value:ping,id:'ping:' + ping.path}; render(); } }
 function demoImage(label, color) { return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80"><rect width="80" height="80" fill="#0a1c25"/><path d="M0 58 25 42l15 10 20-28 20 34v22H0z" fill="${color}" opacity=".55"/><circle cx="52" cy="29" r="7" fill="#eaf8ff"/><text x="40" y="73" fill="#d9e3ec" text-anchor="middle" font-family="monospace" font-size="10">${label}</text></svg>`); }
-function demoState() { const now = Date.now() / 1000, stages = [{id:'incoming',label:'Incoming'},{id:'processing',label:'Processing'},{id:'priority',label:'Priority queue'},{id:'standard',label:'Standard queue'},{id:'no_ship',label:'No ship'},{id:'sent',label:'Downlink sent'}].map(stage => ({...stage,count:0,files:[]})); return {timestamp:now,stages,files:[],events:[],fleet_pings:[]}; }
-function demoFile(index) { const id = `demo_${index}`, colors = ['#46c4d7','#f2b95c','#a68aff']; const target = String(index).padStart(3, '0'), noShip = index % 8 === 0, queueStage = index % 4 === 0 ? 'standard' : 'priority'; const queueRank = Array.from({length:index}, (_, position) => position + 1).filter(candidate => candidate % 8 !== 0 && (candidate % 4 === 0 ? 'standard' : 'priority') === queueStage).length; const darkVessel = !noShip && queueRank % 3 === 1 && (queueStage !== 'priority' || queueRank < 37); const fleet = darkVessel ? DEMO_FLEETS[(queueRank - 1) % DEMO_FLEETS.length] : null; return {id,filename:`SIM_PASS_001_T${target}.jpg`,bytes:780000 + index * 63000,modified_at:Date.now() / 1000,image_url:demoImage(`SIM ${target}`, colors[(index - 1) % colors.length]),no_ship:noShip,dark_vessel:darkVessel,alert:fleet ? {detection_id:`SIM_PASS_001_T${target}`,scene_id:'SIM_PASS_001',classification:'DARK_VESSEL',latitude:fleet.latitude + .02,longitude:fleet.longitude + .03,fleet} : null}; }
-function demoStage(file, stage, progress) { if (stage === 'priority' || stage === 'standard') { file.encrypted = true; file.queue_origin = stage; } file.stage = stage; file.stage_label = ({incoming:'Incoming',processing:'Processing',priority:'Priority queue',standard:'Standard queue',no_ship:'No ship',sent:'Downlink sent'})[stage]; file.progress = progress; const target = simulation.state.stages.find(item => item.id === stage); target.files.push(file); target.count = target.files.length; simulation.state.files.push(file); }
+function demoState() { const now = Date.now() / 1000, stages = [{id:'priority',label:'Priority queue'},{id:'standard',label:'Standard queue'},{id:'sent',label:'Downlink sent'}].map(stage => ({...stage,count:0,files:[]})); return {timestamp:now,stages,files:[],events:[],fleet_pings:[]}; }
+function demoFile(index) { const id = `demo_${index}`, colors = ['#46c4d7','#f2b95c','#a68aff']; const target = String(index).padStart(3, '0'), queueStage = index % 4 === 0 ? 'standard' : 'priority'; const queueRank = Array.from({length:index}, (_, position) => position + 1).filter(candidate => (candidate % 4 === 0 ? 'standard' : 'priority') === queueStage).length; const darkVessel = queueRank % 3 === 1 && (queueStage !== 'priority' || queueRank < 37); const fleet = darkVessel ? DEMO_FLEETS[(queueRank - 1) % DEMO_FLEETS.length] : null; return {id,filename:`SIM_PASS_001_T${target}.jpg`,bytes:780000 + index * 63000,modified_at:Date.now() / 1000,image_url:demoImage(`SIM ${target}`, colors[(index - 1) % colors.length]),dark_vessel:darkVessel,queue_stage:queueStage,alert:fleet ? {detection_id:`SIM_PASS_001_T${target}`,scene_id:'SIM_PASS_001',classification:'DARK_VESSEL',latitude:fleet.latitude + .02,longitude:fleet.longitude + .03,fleet} : null}; }
+function demoStage(file, stage, progress) { if (stage === 'priority' || stage === 'standard') { file.encrypted = true; file.queue_origin = stage; } file.stage = stage; file.stage_label = ({priority:'Priority queue',standard:'Standard queue',sent:'Downlink sent'})[stage]; file.progress = progress; const target = simulation.state.stages.find(item => item.id === stage); target.files.push(file); target.count = target.files.length; simulation.state.files.push(file); }
 function demoEvent(file, event, fromStage) { simulation.state.events.unshift({event,timestamp:Date.now() / 1000,filename:file.filename,stage:file.stage,stage_label:file.stage_label,from_stage:fromStage,alert:file.alert}); }
 function animateTransfer(ghost, source, destinationSelector, destinationItem) {
   if (!ghost || !source) return;
@@ -116,19 +116,18 @@ function startExample() {
   $('status').className = 'status';
   $('status').textContent = 'Simulation running · live stream paused in this window';
   const files = Array.from({length:50}, (_, index) => demoFile(index + 1));
-  files.forEach(file => { demoStage(file, 'incoming'); demoEvent(file, 'arrived'); });
+  files.forEach(file => { demoStage(file, file.queue_stage); demoEvent(file, file.queue_stage === 'standard' ? 'queued_standard' : 'queued_priority'); });
   render();
-  const processingQueue = [...files];
-  let processingActive = 0, downlinkActive = 0, priorityDispatches = 0;
+  let downlinkActive = 0, priorityDispatches = 0;
   const finishWhenDone = () => {
-    if (!simulation.finishing && files.every(item => item.stage === 'no_ship' || (item.stage === 'sent' && item.progress === 100))) {
+    if (!simulation.finishing && files.every(item => item.stage === 'sent' && item.progress === 100)) {
       simulation.finishing = true;
       finishExample();
     }
   };
   const nextDownlinkFile = () => {
     const queue = id => simulation.state.stages.find(stage => stage.id === id).files;
-    const priority = queue('priority'), standard = queue('standard'), noShip = queue('no_ship');
+    const priority = queue('priority'), standard = queue('standard');
     if (priority.length && (priorityDispatches < 3 || !standard.length)) {
       priorityDispatches += 1;
       return priority[0];
@@ -141,7 +140,7 @@ function startExample() {
       priorityDispatches += 1;
       return priority[0];
     }
-    return noShip[0];
+    return null;
   };
   const pumpDownlink = () => {
     if (!simulation || downlinkActive) return;
@@ -172,28 +171,7 @@ function startExample() {
       });
     }, 1000);
   };
-  const pumpProcessing = () => {
-    while (simulation && processingActive < 2 && processingQueue.length) {
-      const file = processingQueue.shift();
-      processingActive += 1;
-      scheduleDemo(() => {
-        animateDemo(file, 'processing', 'processing', demoProgressDelay(), () => {
-          processingActive -= 1;
-          if (file.no_ship) {
-            moveDemo(file, 'no_ship', 'no_ship');
-            scheduleDemo(() => pumpDownlink(), 1000);
-            pumpProcessing();
-            return;
-          }
-          const queueStage = Number(file.id.split('_').pop()) % 4 === 0 ? 'standard' : 'priority';
-          moveDemo(file, queueStage, queueStage === 'standard' ? 'queued_standard' : 'queued_priority');
-          scheduleDemo(() => pumpDownlink(), 1000);
-          pumpProcessing();
-        });
-      }, 1000);
-    }
-  };
-  pumpProcessing();
+  pumpDownlink();
 }
 function stopExample() { if (!simulation || !simulation.running) return; simulation.running = false; clearDemoTimers(simulation); $('stop').disabled = true; $('status').textContent = 'Simulation stopped · reset to resume live stream'; render(); }
 function resetExample() { if (simulation) { simulation.running = false; clearDemoTimers(simulation); } simulation = null; selected = null; $('example').disabled = false; $('stop').disabled = true; $('reset').disabled = true; $('refresh').disabled = false; load(); }
