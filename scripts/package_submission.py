@@ -29,7 +29,7 @@ import subprocess
 from datetime import datetime, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-NAME = "tactical-edge-sentinel"
+NAME = "iris"
 
 
 def git(*args: str) -> str:

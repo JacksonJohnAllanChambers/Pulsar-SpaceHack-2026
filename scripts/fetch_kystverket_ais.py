@@ -47,7 +47,7 @@ STATINFO = "/api/ais/statinfo/for-mmsis-time"
 
 # The API docs ask callers to identify themselves so Kystverket can get in touch about load
 # rather than simply throttling; there is no key and no rate limit.
-UA = "Pulsar-SpaceHack-2026 TacticalEdgeSentinel (scripts/fetch_kystverket_ais.py)"
+UA = "Pulsar-SpaceHack-2026 IRIS (scripts/fetch_kystverket_ais.py)"
 
 # Columns of a position row, in order, from the swagger response example.
 I_MMSI, I_TIME, I_LON, I_LAT, I_COG, I_SOG, I_MSG, I_CALC, I_DSEC, I_DIST, I_HDG, I_ROT = range(12)

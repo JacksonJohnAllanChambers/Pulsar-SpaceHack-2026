@@ -1,4 +1,4 @@
-# Tactical Edge Sentinel -- how it works
+# IRIS -- how it works
 
 Pulsar SpaceHack 2026, Track 1 (free-for-all). This is the explanation. Every measured number lives in
 [`RESULTS.md`](RESULTS.md), the judge-facing summary is [`RUBRIC_SPEC_SHEET.md`](RUBRIC_SPEC_SHEET.md),

@@ -114,7 +114,7 @@ def open_day(day):
         return io.TextIOWrapper(z.open(name), encoding="utf-8", errors="replace")
     url = URL.format(y=y, m=m, d=d)
     print(f"[NOAA] streaming {url} (nothing is saved)")
-    req = urllib.request.Request(url, headers={"User-Agent": "TacticalEdgeSentinel research probe"})
+    req = urllib.request.Request(url, headers={"User-Agent": "IRIS research probe"})
     resp = urllib.request.urlopen(req, timeout=300)
     print(f"[NOAA] HTTP {resp.status}, {int(resp.headers.get('Content-Length', 0)) / 1e6:.0f} MB")
     return io.TextIOWrapper(io.BufferedReader(_ZipSocket(resp), 1 << 20),

@@ -1,4 +1,4 @@
-# Tactical Edge Sentinel — pitch and demo guide
+# IRIS — pitch and demo guide
 
 Pulsar SpaceHack 2026, Track 1. Rubric weights: Edge relevance 25, Technical 30, Innovation 20,
 Impact 15, Presentation 10.

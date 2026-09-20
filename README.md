@@ -1,6 +1,10 @@
-# Tactical Edge Sentinel
+# IRIS — Infrared Recon & ID Satellite
 
 **Onboard dark-vessel detection for a 4.75 m VNIR nanosatellite — Pulsar SpaceHack 2026, Track 1.**
+
+*The infrared in the name is the payload's near-infrared band (760–860 nm), which is where the detector
+does its work: water reflects about 1 % there, steel and foam 10–40 %. There is no SWIR and no thermal
+sensor on this spacecraft.*
 
 | If you are | Start here |
 | :-- | :-- |
