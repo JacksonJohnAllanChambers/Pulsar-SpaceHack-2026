@@ -50,7 +50,6 @@ def next_image(source_dir):
 def next_downlink_image(
     priority_queue_dir,
     less_priority_queue_dir,
-    no_ship_detected_dir,
     consecutive_priority_images,
 ):
     priority_image = next_image(priority_queue_dir)
@@ -64,18 +63,16 @@ def next_downlink_image(
     if less_priority_image:
         return less_priority_image, 0
 
-    return next_image(no_ship_detected_dir), consecutive_priority_images
+    return None, consecutive_priority_images
 
 
 def run(base_dir, poll_interval=1):
     base_dir = Path(base_dir)
     priority_queue_dir = base_dir / "downlink" / "queues" / "priority"
     less_priority_queue_dir = base_dir / "downlink" / "queues" / "nonPriority"
-    no_ship_detected_dir = base_dir / "noShipDetected"
     sent_dir = base_dir / "sent"
     priority_queue_dir.mkdir(parents=True, exist_ok=True)
     less_priority_queue_dir.mkdir(parents=True, exist_ok=True)
-    no_ship_detected_dir.mkdir(parents=True, exist_ok=True)
     sent_dir.mkdir(parents=True, exist_ok=True)
     consecutive_priority_images = 0
 
@@ -83,7 +80,6 @@ def run(base_dir, poll_interval=1):
         image_path, consecutive_priority_images = next_downlink_image(
             priority_queue_dir,
             less_priority_queue_dir,
-            no_ship_detected_dir,
             consecutive_priority_images,
         )
         if image_path is None:
