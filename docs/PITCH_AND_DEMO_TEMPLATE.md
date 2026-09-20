@@ -98,6 +98,12 @@ we could not call either way.** Not the detector failing: a trained eye on 10-me
 cannot tell a small stationary hull from a floe. That is an information limit of a VNIR payload, not a
 bug in our code. Which is exactly why the next spacecraft needs something that isn't a camera."
 
+**What the applet does about it (10 s -- the first thing to cut if you are running long):** "So it stops
+pretending. In a scene with ice it makes a three-way call -- ship, iceberg, or *uncertain* -- and sends
+probable ice to the back of the downlink queue instead of raising it as a dark vessel. On Svalbard that
+is **46 alerts down to 16, with zero real ships demoted**, and the bundle gets 40% smaller. Nothing is
+ever deleted, and only a transponder is allowed to say 'ship'."
+
 
 ### Slide 4 — It fits the device (30 s)
 **Visual:** the budget table.
@@ -180,6 +186,12 @@ rasters in memory for the layer views and the full set buys you nothing on stage
 6. **The downlink queue.** "Seven kilobytes. The scene was hundreds of megabytes. Anomalies got chips;
    honest traffic did not — it never needs to be seen."
 
+**Optional seventh click, if slide 3's ice line landed:** tick `Ship or ice`, re-run. Pass summary goes
+**46 dark -> 16 dark + 30 "Probable ice (demoted)"**, the queue re-sorts with ice-blue contacts at the
+bottom, and CRYSTAL ENDEAVOR is untouched. Click one ice contact and read its reason aloud: *"13 other
+bright objects within the chip, 15% scene ice, no wake, lead or AIS."* `Ship or ice?` in the header is
+Megan's explainer page if someone wants the logic.
+
 **If they ask about the Jetson / thermals**, then and only then: tick `Thermal governor`, set Orbit to
 `Dawn-dusk SSO (no eclipse)`, re-run. The card drops to **REDUCED while the die is still cold** — *"it
 isn't reacting to heat, it's looking ahead; in a dawn-dusk orbit no eclipse is coming."* Downlink card:
@@ -224,6 +236,25 @@ if asked: LE BOREAL, 142 m at 0.1 kn, flagged `CLEAR_WATER_NO_TARGET`.
 
 **Sea-ice module** — Arctic contacts 149 → **115** (−23 %), US recall **unchanged** at 0.912, precision
 0.693 → 0.697. The physics module is free: it costs nothing in temperate water.
+
+**Ship or ice (`--arctic`, opt-in; Megan's three-way design)** -- `scripts/scorecard.py -i
+data/real/svalbard_poc --arctic --labels data/outputs/svalbard_review/labels.json`:
+
+| Svalbard, hand labels | off | `--arctic` |
+| :-- | --: | --: |
+| Raised as dark vessels | 46 | **16** |
+| Demoted as ice: clutter / could-not-tell / **vessels** | -- | 21 / 9 / **0** |
+| Precision of the alerts that remain | 0.188 | **0.545** |
+| Tarball | 14.3 KB | **8.7 KB** |
+
+16 US scenes with it switched on: **contact-for-contact identical**, no field added. The evidence is
+crowding inside a scene the screener found ice in -- calved glacier ice arrives as a field -- with any
+wake, lead or AIS match protecting the contact. Three alternatives were measured and rejected
+(`scripts/iceberg_study.py`): centre-window brightness/texture fired on **0 of 539** real contacts; a
+fill-invariant spectral slope is real physics (NIR/visible 0.46 ice vs 0.77-1.0 hulls) but caught **1 of
+104** as a frozen gate; and "a wake means ship" was wrong on **21 of 21** Alaska contacts.
+**Say the caveat with the number:** the threshold was read off these same two scenes and every Svalbard
+vessel is large, so 0.545 is optimistic.
 
 **Held-out real Sentinel-2 chips (SEN2MS, 10 m):** open-water recall 0.82, under-way recall 0.83,
 heading median 4° vs AIS, 37 false alarms per 1000 km² with the CNN (73 without).
@@ -291,6 +322,26 @@ are unvalidated, and we say so in the README. We minimised the exposure: the CPU
 one, the model is 59 KB, and ONNX Runtime selects the provider at load time, so moving to TensorRT
 changes speed and nothing else we'd have to re-validate."
 
+**"Where is the GPU in all this? It's a Jetson."**
+"Mostly idle, on purpose. The expensive step in ship detection is looking at 16 megapixels of empty
+ocean, and physics does that in a few OpenCV calls; the network only ever sees a few dozen 64x64 chips,
+0.09 ms each. Our own thermal model says a sunlit radiator sustains about 19 W, so an applet that needs
+the GPU flat-out is one that gets throttled. What we leave free is the point: the GPU and DLA stay
+available to whatever else the payload runs, and we share the bus with ADCS and comms at 15-18% of RAM.
+The CNN goes through ONNX Runtime, so on real hardware the TensorRT provider is picked up at load time --
+written, never run, and we say so."
+
+**"So can you tell a ship from an iceberg?"**
+"Not from the object, and we measured why. At 10 metres a growler and a small hull are both a dozen
+pixels; a person couldn't call 17 of 49 either. Spectrally ice *is* different -- bluer, darker in NIR --
+and that survives sub-pixel mixing, but white superstructure and wake foam look the same, so as a gate it
+caught 1 contact in 104. What does work is context: glacier ice arrives as a field, ships at sea don't.
+So in an icy scene, a contact crowded by other bright objects with no wake, no lead and no transponder
+is demoted -- never deleted -- and everything else stays a full-priority alert. A small boat stopped
+inside a growler field will be called ice. That's the limit of the sensor, and it's why the demotion
+keeps the position and the reason in the bundle. It's also not wasted output: an iceberg list is what
+the Canadian Ice Service and the International Ice Patrol publish."
+
 **"Then how can you claim anything about temperature?"**
 "We don't claim it — we model it and label it. The setup guide told us the container can't show power or
 thermal behaviour, and the rubric asks about temperature anyway, so the only honest move is to build the
@@ -325,7 +376,10 @@ Volunteer these before you're asked. It costs one sentence and buys the whole pa
 * **Arctic recall is n=5.** Two Svalbard scenes, five visible broadcasters, three found. Directionally
   real, statistically thin, and we say the n out loud rather than quoting 0.60 bare.
 * **Arctic precision is 0.188**, against 0.697 temperate. In 25 % ice it is 0.077. We do not dress
-  this up: heavy pack ice defeats a VNIR detector, ours included.
+  this up: dense ice defeats a VNIR detector, ours included.
+* **Ship-or-ice lifts that to 0.545 only by demoting, on two scenes, with a threshold read off those same
+  scenes.** Every Svalbard vessel is large. A small stationary hull inside a growler field will be called
+  ice -- demoted with its position and reason kept, its JPEG chip not sent. It is off by default.
 * **17 of 49 Arctic contacts could not be adjudicated by eye at all.** Precision is quoted over the
   32 that could be. If the uncallable ones were all clutter, precision would be 0.122.
 * Arctic hull length error is 59.7 % median (n=2) against ~20 % temperate -- likely ice fragments

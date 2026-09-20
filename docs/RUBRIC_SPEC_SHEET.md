@@ -26,6 +26,11 @@ device? CPU? Temp? Does it take a really long time to run?"*
 | Long to run? | **1.61 s** per full swath, native ARM64 (M4, 6 threads) | [M] | `scripts/run_on_macmini.sh --native` |
 | In the judging container? | 16 real scenes in **5.33 s**, **2,603 MB = 18.2 %** of cap, linux/arm64, no GPU, no network | [M] | `scripts/run_emulated.sh` |
 | Local inference | 59 KB INT8 ONNX, **0.09 ms/chip**, ORT CPU provider; TensorRT/CUDA selected automatically if present | [M] / [U] on accelerators | `applet/models/model_card.json` |
+| Fits *alongside* everything else? | 14.6-18.2 % of RAM and under half the cores leave the rest of the bus its share; the GPU and DLA are not claimed at all | [M] | `edge_telemetry.json` |
+| Makes its pass window? | One 4096^2 frame takes **2.75 s to fly over** and **1.58 s to process** (M4) -- 1.74x real time; a day's product is **1.9 s of one ground pass**. 120 consecutive passes in one process: latency +0.5 %, one distinct tarball | [M] on M4, not a Jetson | README "Duty cycle"; `scripts/soak.py -n 120` |
+| Uplink cost of changing it? | Every threshold is a **5.8 KB YAML** parameter file; a model swap is **59 KB**; the AIS picture is kilobytes of JSON. No binary swap for tuning -- the ice verifier and `--arctic` are both one config line | [M] | `config.example.yaml`, `applet/models/` |
+| Output cheaper than the raw? | 182 MB swath -> **7.3-9.4 KB**; known, AIS-consistent traffic never earns a chip | [M] | `scripts/benchmark.py` |
+| Precision tested at, and why | Verifier FP32 -> **INT8**: 3.1x smaller, same AUC, both shipped with a model card; physics stages are float32 reflectance | [M] | `applet/models/model_card.json` |
 | Jetson hardware validation | **None. We never had a Jetson.** Every bundle carries `"validated_on_hardware": false` | [U] | `grep validated_on_hardware data/outputs/*/edge_telemetry.json` |
 
 **The temperature answer in one sentence:** your setup guide says the container cannot show power or
@@ -123,6 +128,26 @@ Full sourcing with dates: `docs/GALAXIA_ALIGNMENT.md`.
 | Position error | median **18.5 m** |
 | Cloud | 0.0 % |
 | Heading error | 35.1° median, 50 % flipped — small vessels, weak wakes |
+
+---
+
+## Data and model provenance
+
+The Track Guide asks for licences in the write-up. Nothing here is ambiguous or research-only.
+
+| Input | Source | Licence | Used for |
+| :-- | :-- | :-- | :-- |
+| Sentinel-2 L2A and L1C scenes | Copernicus, read via Element84 Earth Search STAC (public COGs, no login) | Copernicus Sentinel data terms: free, full and open. *Contains modified Copernicus Sentinel data.* | every real-scene benchmark |
+| US AIS, 2024 | NOAA / BOEM Marine Cadastre | US Government work, public domain | temperate + Bay of Fundy ground truth |
+| Svalbard AIS | Kystverket, via Kystdatahuset REST (no credentials) | NLOD -- Norwegian Licence for Open Government Data; credit Kystverket | Arctic ground truth |
+| SEN2MS ship chips | Zenodo record 15571607 | CC-BY-4.0 | verifier training + held-out chips |
+| Landsat 8/9 surface temperature | USGS Collection 2, read via Microsoft Planetary Computer | US Government work, public domain | winter lead-transform cross-check only; not in the flight path |
+| Hand labels (571 US + 51 Svalbard contacts) | this team | ours | precision, verifier training |
+| Synthetic scenes | `simulation/scene_synth.py`, seeded | ours | tuning (seed 777) and held-out test (seed 4242) |
+| **Verifier weights** | trained from scratch by `training/train_verifier.py`; **no pretrained weights anywhere** | ours | flight model, 59 KB |
+| Flight dependencies | numpy, OpenCV, Pillow, pydantic, PyYAML, psutil, tifffile, ONNX Runtime, cryptography | BSD / Apache-2.0 / MIT family (Pillow: MIT-CMU) -- all permissive, all with aarch64 wheels. The OpenCV PyPI wheel bundles an LGPL FFmpeg we never call (no video I/O) | `requirements.txt` |
+
+Considered and **not** used: MASATI (research-use-only licence, RGB with no NIR).
 
 ---
 

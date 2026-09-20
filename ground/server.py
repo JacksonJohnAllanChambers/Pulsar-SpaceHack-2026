@@ -114,6 +114,8 @@ class RunRequest(BaseModel):
     governor_enabled: Optional[bool] = None
     eclipse_fraction: Optional[float] = None
     pin_profile: Optional[str] = None
+    # Ship / iceberg / uncertain call. Off in the flight default; only acts in scenes with ice.
+    arctic_enabled: Optional[bool] = None
 
 
 def _jsonable(obj: Any) -> Any:
@@ -411,6 +413,8 @@ def run(req: RunRequest):
         config.verifier.reject_below = req.verifier_reject_below
     if req.governor_enabled is not None:
         config.thermal.governor_enabled = req.governor_enabled
+    if req.arctic_enabled is not None:
+        config.arctic.enabled = req.arctic_enabled
     if req.eclipse_fraction is not None:
         config.thermal.eclipse_fraction = req.eclipse_fraction
     if req.pin_profile:
@@ -476,6 +480,7 @@ def run(req: RunRequest):
                        "verifier_enabled": config.verifier.enabled,
                        "verifier_reject_below": config.verifier.reject_below,
                        "governor_enabled": config.thermal.governor_enabled,
+                       "arctic_enabled": config.arctic.enabled,
                        "eclipse_fraction": config.thermal.eclipse_fraction,
                        "pin_profile": config.thermal.pin_profile},
         }))

@@ -198,6 +198,7 @@
       <input type="range" id="cloud" min="5" max="95" step="5" value="60"><output id="cloudOut">60</output></div>
     <label class="ctl" title="Stage 3: ONNX micro-CNN on candidate chips"><input type="checkbox" id="cnn" checked> CNN verifier</label>
     <label class="ctl" title="Let the modelled die temperature choose how deep the cascade runs"><input type="checkbox" id="gov"> Thermal governor</label>
+    <label class="ctl" title="In scenes with ice: call contacts SHIP / ICEBERG / UNCERTAIN and send probable ice to the back of the queue. Never drops a contact."><input type="checkbox" id="arctic"> Ship or ice</label>
     <div class="ctl" title="Dawn-dusk sun-synchronous orbits never enter eclipse, so thermal relief never arrives">Orbit
       <select id="orbit"><option value="0.35">Mid-beta SSO (35% eclipse)</option><option value="0">Dawn-dusk SSO (no eclipse)</option></select></div>
     <div class="spacer"></div>
@@ -235,6 +236,7 @@
       <div><i class="sw" style="background:var(--dark)"></i>Dark vessel (no AIS)</div>
       <div><i class="sw" style="background:var(--mismatch)"></i>AIS kinematic mismatch</div>
       <div><i class="sw" style="background:var(--known)"></i>Confirmed known vessel</div>
+      <div><i class="sw" style="background:#9dd9ff"></i>Probable ice (Ship or ice on)</div>
       <div><i class="sw" style="background:var(--ghost)"></i>AIS predicted position</div>
     </div>
   </main>
@@ -295,7 +297,7 @@ async function runPass() {
     const r = await fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bundle: $('#bundle').value, cfar_k_sigma: +$('#k').value, min_physics_score: +$('#phys').value,
         cloud_cover_max_pct: +$('#cloud').value, verifier_enabled: $('#cnn').checked,
-        governor_enabled: $('#gov').checked, eclipse_fraction: +$('#orbit').value }) });
+        governor_enabled: $('#gov').checked, arctic_enabled: $('#arctic').checked, eclipse_fraction: +$('#orbit').value }) });
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
     const keep = scene && scene.id;
     pass = await r.json();
@@ -568,6 +570,7 @@ function renderFooter() {
       <div class="row"><span style="color:var(--dark)">Dark vessels</span><b>${counts('DARK_VESSEL')}</b></div>
       <div class="row"><span style="color:var(--mismatch)">Kinematic mismatch</span><b>${counts('AIS_KINEMATIC_MISMATCH')}</b></div>
       <div class="row"><span style="color:var(--known)">Confirmed known</span><b>${counts('CONFIRMED_KNOWN_VESSEL')}</b></div>
+      ${counts('ICEBERG') ? `<div class="row" title="Ship or ice: demoted to the back of the queue, still downlinked"><span style="color:#9dd9ff">Probable ice (demoted)</span><b>${counts('ICEBERG')}</b></div>` : ''}
       <div class="row"><span style="color:var(--ghost)">AIS missing in clear water</span><b>${pass.ais_not_observed.filter(g => g.reason === 'CLEAR_WATER_NO_TARGET').length}</b></div>
       <div class="row"><span>Scenes usable / total</span><b>${usable} / ${pass.scenes.length}</b></div></div>
     <div class="card"><h4>Edge budget (Orin NX envelope)</h4><div class="big">${fmt(t.wall_clock_time_s, 2)}<small>s wall clock</small></div>
