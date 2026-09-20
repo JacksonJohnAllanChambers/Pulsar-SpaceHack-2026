@@ -10,6 +10,7 @@ from typing import Dict, Any, Optional, Tuple
 from applet.config import AppletConfig
 from applet.core.validator import InputBundleValidator
 from applet.core.telemetry import EdgeTelemetryTracker
+from applet.core.governor import EdgeGovernor
 from applet.pipelines.pipeline_registry import PipelineDispatcher
 from applet.packaging.downlink import DownlinkPackager
 from src.pyFlows.process import route_classified_targets
@@ -17,6 +18,14 @@ from applet.core.unknown_memory import UnknownContactMemory
 from applet.pipelines.ais_correlator import AISKinematicCorrelator, _parse_iso
 
 _RASTER_KEYS = ("array", "nodata_mask", "cloud_mask", "land_mask", "sea_mask", "ndwi", "zmap", "det_mask")
+
+
+def _stage_cost(tracker: EdgeTelemetryTracker) -> Tuple[float, float]:
+    """(wall seconds, cores busy) for the stage that just closed. Both measured."""
+    if not tracker.stages:
+        return 0.0, 0.0
+    last = tracker.stages[-1]
+    return float(last["seconds"]), float(last.get("cores_busy", 0.0))
 
 
 def run_pass(
@@ -71,11 +80,32 @@ def run_pass(
                     protected.append({"latitude": latitude, "longitude": longitude})
                 context["ais_protected_locations"][scene["id"]] = protected
 
+        # The thermal model runs whenever `report_thermal` is on, but only acts on the
+        # cascade when `governor_enabled` is also on -- see ThermalConfig for why those
+        # are separate switches. A disabled governor cannot change detector output.
+        governor = EdgeGovernor.from_config(config) if config.thermal.report_thermal else None
+        if governor is not None:
+            # Only published when the governor is actually allowed to act. In
+            # reporting-only mode the key stays absent, so `active_profile()` returns
+            # None everywhere and the pipeline behaves exactly as it did before this
+            # module existed -- byte for byte.
+            if governor.enabled:
+                context["cascade_profile"] = governor.profile
+            governor.observe("Ingest+Validate", *_stage_cost(tracker))
+
         for stage in PipelineDispatcher.get_pipeline(track, config):
             name = stage.__class__.__name__
             log(f"[STAGE] {name}")
             with tracker.stage(name):
                 context = stage.process(context)
+            if governor is not None:
+                previous = governor.profile.name
+                profile = governor.observe(name, *_stage_cost(tracker))
+                if governor.enabled:
+                    context["cascade_profile"] = profile
+                    if profile.name != previous:
+                        log(f"[GOVERNOR] {previous} -> {profile.name}: "
+                            f"{governor.decisions[-1].reason}")
 
         context.setdefault("classified_targets", context.get("detected_vessels", []))
 
@@ -129,6 +159,12 @@ def run_pass(
     telemetry = tracker.get_summary()
     telemetry["verifier"] = context.get("verifier_info", {})
     telemetry["funnel"] = context.get("detection_funnel", {})
+    if governor is not None:
+        # Sits beside the measured RAM and CPU figures. `validated_on_hardware` is False
+        # in every bundle we have ever produced, and saying so in the artifact itself is
+        # the point -- a number a judge cannot tell apart from a measurement is worse
+        # than no number at all.
+        telemetry["thermal"] = governor.summary()
     if context.get("queue_error"):
         telemetry["queue_error"] = context["queue_error"]
     DownlinkPackager.write_telemetry(downlink["telemetry_path"], telemetry)

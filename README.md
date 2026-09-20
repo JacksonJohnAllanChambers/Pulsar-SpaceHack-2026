@@ -112,6 +112,200 @@ because it is state that outlives a pass, and no bundle we hold revisits one pla
 its effect on precision is **not yet measured**. Known cost: a dark vessel anchored in one spot across
 three dates would be suppressed too.
 
+### Svalbard: the first Arctic scorecard with AIS ground truth
+
+NOAA Marine Cadastre stops at 50.195 N, so the Alaskan probe scenes below could only ever be scored for
+precision by hand. Norway's Kystverket publishes open AIS covering the Svalbard protection zone, which
+closes that gap: `scripts/fetch_kystverket_ais.py` (Kystdatahuset REST, no credentials, NLOD licence,
+credit Kystverket). Two Sentinel-2 scenes, 2024-06-22, 592 km2 of searched water.
+
+| | |
+| :-- | --: |
+| AIS broadcasters in footprint / visible / detected | 8 / 5 / **3** |
+| Recall vs visible AIS | **0.60** (n = 5) |
+| Recall vs all hand-confirmed vessels | **0.75** (6 of 8) |
+| Position error vs dead-reckoned AIS | **median 20.4 m**, p90 61.1 m |
+| Heading error vs reported COG | **median 2.2 deg** |
+| Precision, hand-adjudicated (32 of 49 reviewed) | **0.188** |
+| True false alarms | 26 (43.9 per 1000 km2) |
+
+Found CRYSTAL ENDEAVOR (164.5 m), SILVER WIND (155.8 m) and TEISTEN (17 kn). Both AIS misses were
+adjudicated and both are **genuine** -- LE BOREAL, 142 m sitting at 0.1 kn, was there and we did not
+find it.
+
+**Precision tracks ice fraction, and that is the headline.** Same code, same day, two fjords 100 km apart:
+
+| Scene | Sea ice (% of searched water) | Contacts | Precision |
+| :-- | --: | --: | --: |
+| Isfjorden | 9.7 % | 6 | **0.667** |
+| Kongsfjorden | 25.5 % | 43 | **0.077** |
+
+2.6x the ice, 7x the contacts, precision down by a factor of nine. We are not claiming optical solves
+sea ice. We are claiming we measured where it stops.
+
+**17 of the 49 contacts could not be adjudicated at all.** A trained eye on 10 m pixels cannot reliably
+separate a small stationary hull from a floe -- there is no wake, and at 2-3 px there is no shape either.
+That is an information limit of a VNIR payload rather than a defect in the detector, and it is the
+strongest argument in this repo for putting a non-optical sensor on the same bus (see
+`docs/GALAXIA_ALIGNMENT.md` section 6: 115 Arctic contacts, zero RF emitters, 100 % rejected).
+
+### The Arctic: sea ice is the clutter, and it breaks the detector twice
+
+Dark-vessel detection above the Arctic circle is a live operational requirement (Canada's
+Operation LIMPID, the Danish Joint Arctic Command, the US Coast Guard's Arctic Shield), and the
+reason it is hard is not finding bright objects -- it is that **pack ice is a field of bright,
+high-contrast, ship-sized objects on dark water**, which is precisely the signature a CFAR
+detector exists to find. Commanders will not launch a patrol aircraft on an echo that is
+probably a floe, so a detector that cannot say "ice" is not usable at high latitude at all.
+
+Four real Sentinel-2 L2A scenes were cut over Arctic Alaska (`data/real/arctic_probe`,
+Utqiagvik and Prudhoe Bay 2024-07-09, Kotzebue Sound and Point Hope 2024-10-27; built by the
+same STAC path as the other real bundles, selecting on `s2:snow_ice_percentage`). **All 149
+contacts the unmodified flight config produced were inspected by eye at ~1 km crops: every one
+is a floe, an ice edge, or bright speckle in low-sun glinted water. There is no vessel in any
+of the four scenes**, so on this bundle precision is 0.000 and every contact removed is a win.
+
+| | |
+| :-- | --: |
+| Contacts, flight config as it stood | 149 over 1,226 km2 = **121.5 / 1000 km2** |
+| The same figure in US coastal water | 18.9 / 1000 km2 |
+
+The scenes also exposed two *opposite* failures, both from the same root cause -- there was no
+ice class anywhere in the pipeline:
+
+- **Ice eaten as cloud.** Ice is bright and, across VNIR alone, flat enough to pass the cloud
+  whiteness test (measured 0.23 against a 0.30 limit). Prudhoe Bay reported **50.4 % cloud on an
+  acquisition with 0.0 % cloud**, discarding half a clear scene -- and any vessel in it.
+- **Ice passed through as sea.** At Utqiagvik the floes were too small for the cloud test's area
+  filter, so the whole field reached the detector: 89 contacts, none of them a ship.
+
+And ice fails the water test outright (NIR ~0.29 against a 0.12 limit), so a floe field was also
+becoming a 50 km2 "island" whose 200 m shoreline keep-out erased everything inside the pack.
+
+**No SWIR, so no NDSI.** The usual snow/cloud index needs 1610 nm and HyperScape100 stops at
+860 nm. The separation can still be made inside VNIR, because ice absorbs toward 865 nm while
+cloud droplets scatter almost neutrally. Median NDWI on the four real scenes:
+
+| class | brightness | NDWI |
+| :-- | --: | --: |
+| open water | 0.04 - 0.08 | **+0.52 .. +0.64** |
+| sea ice | 0.25 - 0.35 | **+0.10 .. +0.23** |
+| cloud | 0.27 - 0.43 | **-0.01 .. +0.04** |
+| land / tundra | 0.11 - 0.65 | **-0.53 .. -0.08** |
+
+The classes come out ordered -- land < cloud < ice < water -- and the ice/cloud boundary lands at
+**+0.05 on every one of the four scenes**. Ice becomes a fourth mask, and unlike cloud and land it
+**stays inside the searchable sea**: a vessel beset in pack ice is the target, not something to
+mask away.
+
+**In ice, a bright blob stops being evidence.** The detector instead asks for something ice
+cannot produce. A vessel working through the pack leaves a **lead** -- open water where the floes
+were -- and at 865 nm that channel is ~1 % reflectance against 20-30 % for the ice it displaced,
+a *larger* contrast than the wake the same ship would raise in open sea. Geometrically it is the
+wake problem upside down, so it is the same ray transform with the sign reversed: a contiguous
+run of **deficit** contrast leaving the hull on one bearing.
+
+Two things are deliberately *not* accepted as evidence inside ice, both because measurement said
+so: **elongation**, since floes are angular and routinely run 2.5:1 or slimmer, and a **bright
+wake**, since a chain of floes lying along one bearing reads at wake SNR >= 8 and carried 127 of
+173 Prudhoe candidates straight through an earlier version of this gate. The CNN's physics
+override is withdrawn in ice for the same reason -- a floe with a crisp edge scores physics 1.00
+and rode over a correct 0.04 CNN rejection.
+
+| Arctic probe, 1,458 km2 of searched water | contacts |
+| :-- | --: |
+| masks corrected, no ice gate | 156 |
+| **+ ice regime** | **115** |
+| ...on the three scenes that contain any ice | **68 -> 27 (-60 %)** |
+| Utqiagvik (0.7 % ice) | 88 -> 88, unchanged |
+
+**It is free in temperate water, which is the guardrail that matters.** On the 16 real US scenes
+the ice mask fires on under 0.7 % of pixels and **no candidate ever enters the ice regime**. Run
+against a control config with the ice mask disabled, the 16-scene scorecard is identical: recall
+0.867, 124 AIS-confirmed ships found, 375 contacts against the control's 376. The Arctic work
+costs one contact and no ships.
+
+Utqiagvik is left deliberately alone. Its 88 contacts are **not** a pack-ice problem: measured at
+the contacts themselves, the objects are dim (brightness p50 0.10, under the 0.18 ice threshold)
+and sit in clean open water (background NDWI +0.54) -- scattered brash and glint speckle, too
+sparse to make a regime. An object-level spectral threshold would catch them, but the same
+measurement shows it overlapping hand-adjudicated real vessels (core-NDWI AUC 0.25), so it is
+not in the build. That is an appearance problem, which is what the CNN is for.
+
+**What this does not measure.** No imagery we hold contains a vessel in ice, so the *cost* of the
+ice gate in recall is unmeasured on real data -- only its benefit is. The designed behaviour is
+pinned by `tests/test_ice_regime.py`, including the case that matters: an identical bright blob
+must survive in open water and be rejected inside pack ice. The known cost is stated rather than
+hidden: **a vessel stopped dead in the pack has neither a lead nor a wake, and this gate drops
+it.** VNIR is also blind in the polar night; the Northwest Passage and Northern Sea Route are
+navigable roughly June-October, which is also when there is 20-24 h of daylight above the circle,
+so traffic and illumination coincide -- but winter high-latitude MDA needs SAR, which this
+payload does not carry.
+
+**A verifier retrained on ice** (`training/arctic_ice_chips.py`, 2,340 mined chips, all label 0)
+was built and scored against the flight model. **ARC_KOTZEBUE is held out of training entirely**,
+so its rejection rate is a generalisation number and not a memorisation one -- and the model does
+slightly *better* on the held-out scene (93.9 %) than on the three it trained on (91.5 %), which is
+what no memorisation looks like. On the 26 real Kotzebue contacts -- the hard ones that survived
+the physics stage -- **the flight model rejects 0 %, the ice model 54 %**, on a scene it has never
+seen. Held-out US chip AUC rises 0.921 -> 0.954. The shortcut this risks, "Arctic-looking scene =>
+not a ship", was tested using bright background as the available proxy: bright-background vessels
+are kept at 98.4 % against 98.4 % for dark-background ones, so it is not taking that route.
+
+**But chip-level metrics lied about the end-to-end result, and that is the finding.** The retrained
+model is also more permissive on positives (vessels kept 91.9 % -> 97.7 %), so candidates the old
+model used to reject now survive into the contact list. Scored end to end, with hand labels carried
+across runs by position (`scripts/transfer_labels.py`, since detection ids renumber whenever the
+contact set changes):
+
+| | Arctic probe | US 16 scenes: recall | precision | false alarms |
+| :-- | --: | --: | --: | --: |
+| flight config as it stood | 149 contacts, 121.5 /1000 km2 | 0.912 | 0.693 | 107 |
+| **+ ice mask and ice regime** | **115, 78.9 /1000 km2** | **0.912** | **0.697** | **105** |
+| + ice-retrained verifier | 71, 48.7 /1000 km2 | 0.921 | 0.655 | 131 |
+
+So the physics module is **free** -- it costs nothing in temperate water and slightly improves it --
+while the retrained verifier buys a further 38 % off the Arctic false alarms at a real price:
+**+26 US false alarms for +1 AIS-confirmed ship**, concentrated in Miami (+11) and San Diego (+5),
+though it improves Tampa (0.500 -> 0.615), the worst scene in the set.
+
+**Only the physics module is in the flight config.** The ice verifier ships beside it as
+`applet/models/verifier_ice_int8.onnx` and is selected by uplinking `verifier.model_path`, which is
+already a mission parameter -- the operator tasking a Beaufort Sea pass knows it is an ice pass, and
+a model swap is a config line rather than a rebuild. What it is *not* is a free upgrade for
+temperate water, and the table says so rather than quoting the chip AUC and stopping there.
+
+The retrained verifier is also the only thing that touches Utqiagvik, where the physics has no
+purchase: 88 contacts -> 51. That is the division of labour the whole cascade is built on -- physics
+for the regime, the network for appearance -- and it is visible here as two disjoint wins.
+
+**The obvious fix does not work, and it is worth saying why.** A vessel stopped in ice has no lead
+and no wake, but it is *tall* -- 10-30 m of superstructure against a floe's 1-2 m freeboard -- so a
+cast shadow should name it. It was tested properly and the answer is no. Two things break the
+premise. First, **these scenes are not low-sun**: Sentinel-2 crosses at 22:00-23:00 UTC, which at
+-150 deg longitude is local solar *noon*, so Prudhoe sits at **41.7 deg** and Utqiagvik at 40.8 deg
+in July, not the 15-35 deg the idea assumes; only the October scenes (9.9 and 8.6 deg) are genuinely
+low-sun and they hold 26 of the 139 ice contacts. Second, and fatally, **"ship on bright ice" never
+happens**: 1 contact in 655 has a background brighter than 0.15 reflectance, because floes *float
+in water* -- a floe's shadow falls on dark sea exactly like a ship's does. The asymmetry the test
+needs is absent from the negatives and the positives alike.
+
+The measurement agrees. Stacking every contact's anti-solar profile (which beats per-object noise
+down by sqrt(n)) finds a real depression behind US vessels of **-2.3 %** of background, -4.5 % for
+large ships, against a physics prediction of -60 to -70 %; sea ice shows **+1.4 %**, i.e. none. So
+the effect exists and is ~25x too shallow to use: 0.4 sigma per contact, and any threshold that
+rejects all ice loses 93 % of vessels. The decisive control is direction: the **sunlit** side
+separates as well as the shadow side (AUC 0.607 vs 0.566), so the weak signal is isotropic local
+texture, not a shadow -- and vessel-vs-clutter *within* one US scene, the only comparison with no
+scene confound at all, sits at AUC 0.492-0.507. Dead on chance. There is no shadow gate in the
+build. The envelope where it could work -- sun under ~15 deg, a bright sunlit surround, <= 5 m GSD --
+is the consolidated-ice freeze-up case at MOBIUS-1's 4.75 m, which is worth revisiting only with a
+real ship-in-ice positive set that this data does not contain.
+
+There is no open Arctic AIS to check against: **NOAA Marine Cadastre stops at 50.195 N** (measured
+on the 2024-09-09 day file -- 8.8 M fixes, Hawaii and Guam present, Alaska entirely absent), so
+these scenes are scored on hand-adjudicated precision alone.
+
 ### Real chips (SEN2MS, 10 m)
 
 Scored on **SEN2MS Vessel BBoxes** (Dalhousie, CC-BY-4.0): real Sentinel-2 chips whose vessel boxes were
@@ -247,6 +441,106 @@ And in the judges' own container (`--memory=14g --memory-swap=14g --cpus=6 --net
 aarch64, native on an M4 host): the 16 real scenes take **5.33 s** and peak at **2,603 MB — 18.2 % of the
 14 GB cap**.
 
+### Built for a specific spacecraft
+
+Galaxia's own MÖBIUS-1 launch release says its Earth-observation capabilities support *"maritime
+security, tracking dark vessels and combating illegal fishing operations"*, and Galaxia acquired a
+Simera Sense **HyperScape100 on 3 September 2026** — sixteen days before this hackathon. That imager
+is our reference payload: 4.75 m GSD, 19.4 km swath, 460–860 nm VNIR, 32 bands selectable in orbit
+from a library of 400. The VNIR ceiling is why the sea-ice work below exists at all — no SWIR means no
+NDSI, so ice had to be separated from cloud inside the VNIR range alone.
+
+**[docs/GALAXIA_ALIGNMENT.md](docs/GALAXIA_ALIGNMENT.md)** is the full technical argument: where this
+applet sits in the Onyx Edge Core/Blades split, what the 32-of-400 band reconfigurability would buy,
+what this system *cannot* do (polar night, cloud, no SAR, no hardware validation), and a
+geometry-derived answer to what the next spacecraft should carry. `python scripts/cue_geometry.py`
+reproduces that last argument: a 15-knot vessel runs 13.9 km in 30 minutes against a 19.4 km swath, so
+the binding constraint on cue-and-confirm is cue **latency**, not pixels.
+
+### Thermal governor: the applet knows it is on a Jetson
+
+The rubric asks whether RAM, CPU, **temperature** and runtime fit the device. The organisers'
+own setup guide says the emulated container cannot show us "power draw or thermal throttling
+behavior". Those reconcile one way: model the temperature, say that it is a model, and use it
+to drive a decision the applet actually makes.
+
+**The physics.** `applet/core/thermal.py` is a two-node lumped-capacitance model -- SoC junction
+conducted to a chassis that radiates to deep space. In orbit there is no convection, so the only
+heat sink is a painted external face and the only other input is the Sun. With our assumed bus
+(0.09 m² radiator, ε 0.85 / α 0.20, 12 W of other avionics) that asymmetry is decisive:
+
+| | eclipse | sunlit |
+| :-- | --: | --: |
+| Sustainable SoC power | 34.6 W | **18.9 W** |
+| Steady-state junction at 25 W | 53 °C | **94 °C** |
+| Steady-state junction at 15 W | 21 °C | 70 °C |
+
+Direct sun puts 24.5 W back onto the same face that has to do the rejecting. **Orin NX's 25 W
+mode is affordable in eclipse and is not affordable in sunlight** — and a dawn-dusk
+sun-synchronous orbit, which plenty of EO smallsats fly for the constant power, never gets an
+eclipse at all.
+
+**The control law.** `applet/core/governor.py` walks a four-rung ladder, cheapest-value-first,
+on one invariant: **degrade the evidence, never the alert.** Every rung still reports every dark
+vessel it finds; what shrinks is the corroboration. It looks ahead rather than reacting, because
+the chassis time constant (~70 min) is the same order as the orbit — by the time the die is hot
+the bus has already banked the heat. A burst above the sustainable budget is allowed only when
+the model says the terminator arrives before the throttle point does.
+
+**What each rung costs — same code, same bundle, only the profile varies**
+(`python scripts/orbit_pass_sim.py --input data/eval_bundle --repeats 5` — 40 synthetic tuning scenes at 4.75 m, seed 777,
+not the real-scene benchmark above).
+These figures are **exact**: the pipeline is deterministic given a profile, so they reproduce
+byte-for-byte on every run.
+
+| Profile | Power cap | Workers | Candidates | Dark vessels | AIS-confirmed | Chips | Downlink |
+| :-- | --: | --: | --: | --: | --: | --: | --: |
+| FULL | 25 W | 3 | 3 835 | 18 | 46 / 46 | 28 | 18.0 KB |
+| REDUCED | 15 W | 2 | 3 544 | 18 | **46 / 46** | 0 | **7.3 KB** |
+| SURVEY | 15 W | 1 | 2 552 | 18 | 41 / 46 | 0 | 6.6 KB |
+| BEACON | 10 W | 1 | 1 498 | **121** | 44 / 46 | 0 | 9.9 KB |
+
+The first rung is free: **REDUCED keeps every one of the 46 AIS-confirmed ships and all 18
+dark-vessel alerts while cutting the downlink 60 %** — it only drops the JPEG evidence crops.
+SURVEY drops the wake ray transform and loses 5 AIS-confirmed ships with it (no wake term in the
+physics score, so borderline contacts fall under `min_physics_score`). BEACON drops the CNN and
+false alarms go up **6.7×**, as its own rationale string predicts — still worth having when the
+alternative is reporting nothing.
+
+**We do not quote a speed number, because we could not measure one.** The power cap and worker
+count a rung selects are exact — they are configuration. Whether that turns into wall-clock on a
+given machine is a separate question, and our dev box cannot answer it. The trap is subtle and worth
+stating: *within* one invocation the repeats look tight enough to trust, but re-running the whole
+script moved the FULL wall-clock median across **6.51 / 8.33 / 9.73 s** on the same machine and the
+same data. Drift between invocations dwarfs the spread inside one, and dwarfs the gaps between rungs.
+Two careful attempts disagreed in sign — five sequential repeats put REDUCED 30 % *below* FULL in
+CPU-seconds, six interleaved rounds put it 11 % *above*. An earlier draft of this section quoted
+"9 % slower" from a single shot; that number was not real and has been withdrawn. `--repeats` prints
+the ranges, and the script now refuses to let you read a speed-up out of one run.
+
+**What the governor does across an orbit** (modelled, 400 min of continuous processing):
+
+| Orbit | Peak junction | Settles on | Throttled? |
+| :-- | --: | :-- | :-- |
+| Mid-beta SSO (35 % eclipse) | 83.1 °C | FULL, dipping to REDUCED 4x | no |
+| Dawn-dusk SSO (no eclipse) | 70.4 °C | REDUCED, permanently | no |
+
+Same applet, same code, two orbits: it works out on its own that dawn-dusk cannot afford full
+depth, and that a mid-beta orbit can spend the eclipse and coast the sunlit arc.
+
+**What is real and what is not.** Per-stage wall-clock, CPU-seconds and peak RSS are measured in
+the container. Watts — and therefore degrees — are modelled, inferred from measured CPU
+utilisation against NVIDIA's published nvpmodel envelopes. `JetsonThermalSource` reads the real
+die temperature from `/sys/.../thermal_zone*/temp` when it exists and the model steps aside;
+**we have never executed that path**, and every bundle we have ever produced carries
+`"validated_on_hardware": false` in its telemetry. A number a judge cannot tell apart from a
+measurement is worse than no number, so the artifact says so itself.
+
+**Off by default.** `report_thermal` (on) models and reports and changes nothing. `governor_enabled`
+(off) lets it act — its decisions depend on host timings, so a governed pass is no longer a pure
+function of its input bundle. Same reasoning as `unknown_memory_enabled`. The reproducibility
+claim above is unaffected either way: telemetry rides *next to* the tarball, never inside it.
+
 ### Duty cycle: what a day in orbit actually asks of it
 
 A benchmark measures one pass. A satellite runs for months, so the question is whether the processor
@@ -294,7 +588,9 @@ works as a regression test rather than a one-off demonstration.
 
 ```bash
 pip install -r requirements-dev.txt
-python scripts/setup_data.py                         # synthetic bundles (add --all for the real datasets)
+python scripts/setup_data.py                         # synthetic bundles only, no downloads (~1 min)
+python scripts/setup_data.py --benchmarks            # the three AIS-scored benchmarks below (~1.5 GB)
+python scripts/setup_data.py --all                   # every dataset, including SEN2MS and thermal (~2.5 GB)
 python -m applet run -i data/sample_bundle -o data/outputs -c config.example.yaml
 python -m ground.server                              # GUI at http://127.0.0.1:8050
 ```
@@ -306,7 +602,7 @@ the container.
 Other tools:
 
 ```bash
-python -m pytest -q                                  # 67 tests: resilience, physics, determinism, flight-image closure
+python -m pytest -q                                  # 150 tests: resilience, physics, sea ice, determinism, flight-image closure
 python scripts/evaluate.py -i data/sample_bundle     # precision / recall / heading / AIS accuracy
 python scripts/evaluate.py --no-verifier             # ...what the CNN buys
 python scripts/generate_synthetic_data.py --random 60 --seed 4242 -o data/heldout_bundle
@@ -322,6 +618,21 @@ wake segments, dead-reckoned AIS positions, ground truth, CNN rejects, the downl
 JPEG chips, per-stage latency, RAM against the 14 GB envelope, the detection funnel and live accuracy. The
 CFAR threshold, physics threshold, cloud limit and CNN on/off are sliders, so the precision/recall trade can
 be shown live. No CDN or internet resources are used.
+
+#### Thermal governor panel
+
+A **Thermal governor** checkbox and an **Orbit** selector sit next to the CNN toggle. With the governor off,
+the footer card still reports the modelled junction temperature, headroom and orbit phase — it just changes
+nothing. Turn it on and the same pass re-profiles itself: pick *Dawn-dusk SSO (no eclipse)* and the console
+drops to **REDUCED** before the die is even warm, because no relief is coming, and the downlink falls from
+18.0 KB to 7.3 KB with all 46 AIS-confirmed ships and all 18 dark-vessel alerts intact. Targets whose evidence
+crop was shed say so ("chip shed by governor") rather than showing a hole.
+
+**Show across an orbit →** opens the full trace: junction temperature over 400 minutes of continuous
+processing for both orbits, with eclipse shading, the throttle and target lines, and a colour strip showing
+which rung was active — plus the whole ladder and what each rung costs. Every number in that view is served
+by `/api/orbit-sim` and carries `validated_on_hardware: false`. The card is badged **MODELLED** everywhere it
+appears, because it is.
 
 #### Transfer operations viewer
 
@@ -415,6 +726,7 @@ python training/train_verifier.py --real-npz data/real/sen2ms/train_chips.npz
 python training/sen2ms.py evaluate                            # scorecard on held-out products
 python training/sen2ms.py bundle                              # real chips + their real AIS -> bundle + AIS scorecard
 python scripts/fetch_noaa_ais.py --bundle data/real/s2_ais_bundle   # real AIS for a US scene (NOAA, ~360 MB/day)
+python scripts/fetch_sentinel2.py --region arctic --min-ice 5 --max-cloud 45 \n    -o data/real/arctic_probe                                 # Arctic sea-ice scenes (no AIS exists above 50.2 N)
 ```
 
 `fetch_sentinel2.py` finds the least cloudy recent scene per area through the public Element84 Earth Search STAC
@@ -425,6 +737,10 @@ RGB, no NIR) is a candidate second source of real hard negatives.
 
 ## Honest limitations
 
+* **Sea ice.** The ice class and the lead detector are validated on four real Arctic scenes that
+  contain no vessels, so the gate's benefit is measured and its recall cost is not. A vessel
+  stopped dead in pack ice has neither a lead nor a wake and will be dropped. VNIR sees nothing
+  at all in the polar night, and no open AIS archive covers the Arctic to check against.
 * The verifier has never been trained on uncorrected (L1C) imagery. Vessel detection holds on it, but
   shallow-water clutter rises and those extra contacts are not yet adjudicated (see the L1C table).
 * Real-image validation is at 10 m (Sentinel-2), not the 4.75 m target GSD. Real false alarms (thin cloud,
@@ -460,7 +776,7 @@ simulation/        scene renderer (ground-side)
 training/          verifier training, ONNX export, INT8 quantisation
 ground/            FastAPI + single-page console
 scripts/           setup_data (start here), bundle generator, Sentinel-2 / NOAA fetchers, evaluate, benchmark
-tests/             67 tests
+tests/             150 tests
 docker/            Dockerfile.arm64
 docs/              SETUP (collaborators start here), hackathon rules, rubric, track notes, pitch template
 ```

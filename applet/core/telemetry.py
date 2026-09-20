@@ -62,12 +62,30 @@ class EdgeTelemetryTracker:
 
     @contextmanager
     def stage(self, name: str):
+        """
+        Time one stage, and measure how much of the CPU budget it actually used.
+
+        `cores_busy` is CPU-seconds over wall-seconds for this stage alone. It is a real
+        measurement -- the container gives us honest `cpu_times()` -- and it is what the
+        EdgeGovernor turns into a power estimate, so a stage that parallelises well reads
+        as hotter than one that blocks on I/O. A cumulative average would smear that out
+        and the governor would react to the wrong thing.
+        """
         t0 = time.perf_counter()
+        cpu0 = self.process.cpu_times()
         try:
             yield
         finally:
             self.update_peak_memory()
-            self.stages.append({"stage": name, "seconds": round(time.perf_counter() - t0, 4)})
+            seconds = time.perf_counter() - t0
+            cpu1 = self.process.cpu_times()
+            cpu_seconds = (cpu1.user + cpu1.system) - (cpu0.user + cpu0.system)
+            self.stages.append({
+                "stage": name,
+                "seconds": round(seconds, 4),
+                "cpu_seconds": round(cpu_seconds, 4),
+                "cores_busy": round(cpu_seconds / max(seconds, 1e-4), 2),
+            })
 
     def set_io_metrics(self, input_bytes: int, output_bytes: int, input_raw_bytes: int = 0):
         """input_bytes = files as stored; input_raw_bytes = uncompressed sensor samples."""

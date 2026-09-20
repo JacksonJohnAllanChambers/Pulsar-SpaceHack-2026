@@ -37,6 +37,16 @@ class ScreeningConfig(BaseModel):
     cloud_min_area_m2: float = 40000.0
     cloud_buffer_m: float = 40.0
 
+    # Sea ice. HyperScape100 stops at 860 nm, so the usual NDSI (green vs 1610 nm SWIR) does not
+    # exist for us and ice has to be separated from cloud inside the VNIR range alone. It can be:
+    # ice absorbs toward 865 nm while cloud droplets scatter almost neutrally, so at equal
+    # brightness ice keeps a positive NDWI and cloud sits at zero. Measured on four real Arctic
+    # Sentinel-2 scenes (median NDWI: water +0.52..+0.64, ice +0.10..+0.23, cloud -0.01..+0.04,
+    # land -0.53..-0.08), the ice/cloud boundary lands at +0.05 in every one of them.
+    ice_ndwi_min: float = 0.05  # bright AND above this NDWI is ice, not cloud
+    ice_ndwi_max: float = 0.40  # above this it is water, not ice
+    ice_brightness_min: float = 0.18
+
 
 class DetectionConfig(BaseModel):
     # CFAR (constant false alarm rate) local-contrast detector on the NIR band
@@ -62,6 +72,20 @@ class DetectionConfig(BaseModel):
     wake_min_snr: float = 3.5
     kelvin_half_angle_deg: float = 19.47
     kelvin_tolerance_deg: float = 6.0
+
+    # Ice regime. Sea ice is a field of bright, high-contrast, ship-sized objects on dark water --
+    # the exact signature the CFAR exists to find -- so in ice a bright blob is no longer evidence
+    # of a hull and the detector has to ask for something ice cannot produce. Density alone does
+    # not catch it: the four Arctic probe scenes run at 0.06-1.45 candidates/km2, well under the
+    # rough-sea gate, while being far more ship-like than any whitecap field.
+    ice_background_fraction: float = 0.05  # ice this fraction of a candidate's surroundings = ice regime
+    ice_background_radius_m: float = 600.0  # annulus in which that fraction is measured
+    # A vessel under way in pack ice leaves an open-water channel astern: at 865 nm that channel is
+    # ~1 % reflectance against 20-30 % for the floes, a far larger contrast than the wake it would
+    # leave in open water. Same ray transform, opposite sign.
+    lead_min_length_m: float = 150.0
+    lead_min_snr: float = 3.0
+    lead_max_width_m: float = 400.0
 
     parallax_reject_px: float = 3.0  # band-to-band displacement that marks an aircraft, not a vessel
     # 0.20 was tried ("let the CNN rescue borderline candidates"): on the 16 real scenes it found no
@@ -101,6 +125,56 @@ class AISCorrelationConfig(BaseModel):
     unknown_memory_path: Optional[str] = None
 
 
+class ThermalConfig(BaseModel):
+    """
+    Orbital thermal model and the cascade governor it drives. See `applet/core/thermal.py`
+    for the physics and `applet/core/governor.py` for the control law.
+
+    Two switches, deliberately separate, because they carry very different risk:
+
+    `report_thermal` (ON by default) only *models and reports*. It adds a predicted
+    junction temperature and power budget to `edge_telemetry.json` beside the measured
+    RAM and CPU figures, and changes no decision anywhere. Nothing downstream can
+    observe it, so a pass stays a pure function of its input bundle.
+
+    `governor_enabled` (OFF by default) lets the model *act*: it re-profiles the cascade
+    mid-pass from accumulated stage timings. Those timings depend on the host, so two
+    runs of the same bundle on different machines can legitimately produce different
+    output. That is correct behaviour for a spacecraft and wrong behaviour for a
+    reproducibility test, so it is opt-in -- same reasoning as `unknown_memory_enabled`.
+    `scripts/orbit_pass_sim.py` and the ground console turn it on explicitly.
+    """
+
+    report_thermal: bool = True
+    governor_enabled: bool = False
+    start_profile: str = "FULL"
+    # Hold one rung and never re-assess. Two uses: measuring what each rung actually
+    # costs in detection terms (scripts/orbit_pass_sim.py), and a ground operator
+    # commanding "stay in BEACON" because they know something the model does not.
+    pin_profile: Optional[str] = None
+
+    # Orbit. The default is a mid-beta sun-synchronous orbit; set eclipse_fraction to 0.0
+    # for dawn-dusk SSO, which never gets thermal relief and is the real stress case.
+    orbit_period_s: float = 94.6 * 60.0
+    eclipse_fraction: float = 0.35
+
+    # Spacecraft thermal design. All [ASSUMED] -- we have no bus. Exposed here so a
+    # reviewer can substitute a real one and re-derive every conclusion downstream.
+    radiator_area_m2: float = 0.090
+    radiator_emissivity: float = 0.85
+    radiator_absorptivity: float = 0.20
+    parasitic_load_w: float = 12.0
+    soc_heat_capacity_j_per_k: float = 120.0
+    soc_to_chassis_r_k_per_w: float = 0.9
+    chassis_heat_capacity_j_per_k: float = 1800.0
+
+    # Jetson limits. throttle_c is where WE act; Orin's own TJ_max is 105 C.
+    throttle_c: float = 95.0
+    target_c: float = 80.0
+    initial_junction_c: float = 25.0
+    initial_chassis_c: float = 20.0
+
+
 class RuntimeConfig(BaseModel):
     # Scenes processed concurrently. Each in-flight 4096x4096 scene costs ~1 GB of
     # temporaries, so 3 workers keeps a full-swath pass far inside the 14 GB envelope.
@@ -126,6 +200,7 @@ class AppletConfig(BaseModel):
     ais_correlation: AISCorrelationConfig = Field(default_factory=AISCorrelationConfig)
     downlink: DownlinkConfig = Field(default_factory=DownlinkConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
+    thermal: ThermalConfig = Field(default_factory=ThermalConfig)
 
     @classmethod
     def load_from_yaml(cls, path: Optional[str] = None) -> "AppletConfig":

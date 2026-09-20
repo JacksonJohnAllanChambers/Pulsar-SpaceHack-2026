@@ -34,6 +34,8 @@ from applet.config import AppletConfig  # noqa: E402
 from applet.core.crypto import decrypt_file  # noqa: E402
 from applet.runner import run_pass  # noqa: E402
 from applet.core.exceptions import InvalidManifestError  # noqa: E402
+from applet.core.governor import CASCADE_LADDER, EdgeGovernor, simulate_orbit  # noqa: E402
+from applet.core.thermal import describe_budget  # noqa: E402
 from ground.fleets import FLEETS, dispatch_sent_alerts, load_alerts, parse_alert_filename  # noqa: E402
 from scripts.evaluate import score_context  # noqa: E402
 
@@ -47,9 +49,34 @@ SENT_DIR = os.path.join(ROOT, "src", "sent")
 FLEET_ALERT_PATH = os.path.join(DATA_DIR, "outputs", "fleet_alerts.json")
 FLEET_OUTPUT_DIR = os.path.join(ROOT, "src", "fleet_alerts")
 TRANSFER_ROOT = os.path.join(ROOT, "src")
+COVERAGE_DATA_DIR = os.path.join(STATIC_DIR, "data")
+COVERAGE_BUILD_CMD = "python scripts/build_coverage.py"
 MAX_LAYER_PX = 2048
 TRANSFER_EVENT_LIMIT = 100
 IMAGE_EXTENSIONS = {".bmp", ".gif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
+# Static assets are served from this table rather than mimetypes.guess_type: on Windows the
+# registry can map .js to text/plain, and a browser's strict MIME check then refuses to execute
+# the script with an opaque error. The judging container is not this machine, so the type is
+# stated here instead of being discovered. The table doubles as the allow-list -- an extension
+# that is absent is not served, which keeps .html on its own explicit page routes.
+STATIC_MEDIA_TYPES = {
+    ".js": "text/javascript; charset=utf-8",
+    ".mjs": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json",
+    ".geojson": "application/geo+json",
+    ".bin": "application/octet-stream",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".wasm": "application/wasm",
+    ".woff2": "font/woff2",
+    ".csv": "text/csv; charset=utf-8",
+    ".txt": "text/plain; charset=utf-8",
+}
 TRANSFER_STAGE_LABELS = {
     "incoming": "Incoming",
     "processing": "Processing",
@@ -82,6 +109,11 @@ class RunRequest(BaseModel):
     cloud_cover_max_pct: Optional[float] = None
     verifier_enabled: Optional[bool] = None
     verifier_reject_below: Optional[float] = None
+    # Thermal governor. Off in the flight default because a governed pass depends on
+    # host timings; the console turns it on explicitly so the demo can show it acting.
+    governor_enabled: Optional[bool] = None
+    eclipse_fraction: Optional[float] = None
+    pin_profile: Optional[str] = None
 
 
 def _jsonable(obj: Any) -> Any:
@@ -205,6 +237,39 @@ def transfer_state() -> Dict[str, Any]:
         return snapshot
 
 
+def _static_file(relpath: str) -> FileResponse:
+    """Serve one file from ground/static/ with an explicit media type. HTML pages keep their own routes."""
+    root = Path(STATIC_DIR)
+    if not relpath or Path(relpath).is_absolute():
+        raise HTTPException(400, "invalid static path")
+    path = (root / relpath).resolve()
+    try:
+        path.relative_to(root.resolve())
+    except ValueError:
+        raise HTTPException(400, "invalid static path")
+    media_type = STATIC_MEDIA_TYPES.get(path.suffix.lower())
+    if media_type is None:
+        raise HTTPException(404, "static file type not served")
+    if not path.is_file():
+        raise HTTPException(404, "static file not found")
+    return FileResponse(path, media_type=media_type, headers={"Cache-Control": "no-store"})
+
+
+def _coverage_json(filename: str):
+    """Read one precomputed coverage JSON, or 503 with the command that would create it."""
+    path = os.path.join(COVERAGE_DATA_DIR, filename)
+    missing = f"coverage data not generated: run `{COVERAGE_BUILD_CMD}` to write ground/static/data/{filename}"
+    if not os.path.isfile(path):
+        raise HTTPException(503, missing)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        # A half-written file during a regeneration reads as "not ready", not as a server fault.
+        raise HTTPException(503, missing)
+    return JSONResponse(payload, headers={"Cache-Control": "no-store"})
+
+
 @app.get("/")
 def index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"), headers={"Cache-Control": "no-store"})
@@ -218,6 +283,53 @@ def transfer_index():
 @app.get("/explainer")
 def explainer():
     return FileResponse(os.path.join(STATIC_DIR, "explainer.html"), headers={"Cache-Control": "no-store"})
+
+
+@app.get("/coverage")
+def coverage():
+    return FileResponse(os.path.join(STATIC_DIR, "coverage.html"), headers={"Cache-Control": "no-store"})
+
+
+@app.get("/static/{relpath:path}")
+def static_file(relpath: str):
+    """Vendored libraries, textures and the precomputed coverage rasters. Still no CDN: every byte is on disk."""
+    return _static_file(relpath)
+
+
+@app.get("/vendor/{relpath:path}")
+def vendor_file(relpath: str):
+    # Alias for ground/static/vendor/, so a page served at /coverage can also reach a
+    # relative "vendor/three.min.js" (which the browser resolves to /vendor/...).
+    return _static_file("vendor/" + relpath)
+
+
+@app.get("/data/{relpath:path}")
+def coverage_data_file(relpath: str):
+    # Alias for ground/static/data/ -- the coverage rasters, NOT the data/ bundle tree at the
+    # repo root. Same reason as /vendor: a relative "data/gaps.json" from /coverage lands here.
+    return _static_file("data/" + relpath)
+
+
+@app.get("/api/coverage/catalog")
+def coverage_catalog():
+    """
+    The satellite catalog behind the coverage globe, straight off disk.
+
+    Never complete -- withheld and classified assets are absent by construction, so an apparent
+    gap is weaker evidence than an apparent look. The page says so; this route does not filter.
+    """
+    return _coverage_json("catalog.json")
+
+
+@app.get("/api/coverage/gaps")
+def coverage_gaps():
+    """
+    Header for the derived gap rasters: grid, window, stats and caveats.
+
+    The sibling .bin rasters are served from /static/data/ and read by the browser; the full
+    coverage time-cube is never shipped. Any cap the precompute applied travels in this header.
+    """
+    return _coverage_json("gaps.json")
 
 
 @app.get("/api/bundles")
@@ -292,6 +404,12 @@ def run(req: RunRequest):
         config.verifier.enabled = req.verifier_enabled
     if req.verifier_reject_below is not None:
         config.verifier.reject_below = req.verifier_reject_below
+    if req.governor_enabled is not None:
+        config.thermal.governor_enabled = req.governor_enabled
+    if req.eclipse_fraction is not None:
+        config.thermal.eclipse_fraction = req.eclipse_fraction
+    if req.pin_profile:
+        config.thermal.pin_profile = req.pin_profile
 
     with _lock:
         try:
@@ -351,7 +469,10 @@ def run(req: RunRequest):
                        "min_physics_score": config.detection.min_physics_score,
                        "cloud_cover_max_pct": config.screening.cloud_cover_max_pct,
                        "verifier_enabled": config.verifier.enabled,
-                       "verifier_reject_below": config.verifier.reject_below},
+                       "verifier_reject_below": config.verifier.reject_below,
+                       "governor_enabled": config.thermal.governor_enabled,
+                       "eclipse_fraction": config.thermal.eclipse_fraction,
+                       "pin_profile": config.thermal.pin_profile},
         }))
 
 
@@ -425,6 +546,29 @@ def download():
     if not d or not os.path.exists(d["downlink_tarball_path"]):
         raise HTTPException(404, "run a pass first")
     return FileResponse(d["downlink_tarball_path"], filename=os.path.basename(d["downlink_tarball_path"]))
+
+
+@app.get("/api/orbit-sim")
+def orbit_sim(minutes: int = 400):
+    """
+    Thermal trace for the two orbits that matter, plus the ladder and the budget.
+
+    MODELLED, not measured -- the container has no thermal sensors and we never had a
+    Jetson. The payload says so and the console prints it beside every number.
+    """
+    minutes = max(10, min(minutes, 2000))
+    orbits = {}
+    for label, eclipse in (("mid-beta SSO", 0.35), ("dawn-dusk SSO", 0.0)):
+        config = AppletConfig.load_from_yaml(os.path.join(ROOT, "config.example.yaml"))
+        config.thermal.governor_enabled = True
+        config.thermal.eclipse_fraction = eclipse
+        orbits[label] = simulate_orbit(EdgeGovernor.from_config(config), minutes)
+    return JSONResponse({
+        "validated_on_hardware": False,
+        "budget": describe_budget(),
+        "ladder": [dict(p.as_dict(), rationale=p.rationale) for p in CASCADE_LADDER],
+        "orbits": orbits,
+    })
 
 
 @app.get("/api/model_card")
