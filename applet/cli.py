@@ -30,6 +30,11 @@ def parse_args():
         help="Pipeline track configuration (default: tactical / Track 1)",
     )
     run_parser.add_argument("--no-verifier", action="store_true", help="Physics-only mode (skip the CNN stage)")
+    run_parser.add_argument(
+        "--arctic",
+        action="store_true",
+        help="Enable conservative Arctic ship/iceberg/uncertain classification",
+    )
 
     return parser.parse_args()
 
@@ -53,7 +58,10 @@ def main():
     config = AppletConfig.load_from_yaml(args.config)
     if args.no_verifier:
         config.verifier.enabled = False
-    print(f"[INFO] Mission: {config.mission.mission_name} | Track: {args.track.upper()}")
+    if args.arctic:
+        config.arctic.enabled = True
+    mode = "ARCTIC" if config.arctic.enabled else "MARITIME"
+    print(f"[INFO] Mission: {config.mission.mission_name} | Track: {args.track.upper()} | Mode: {mode}")
     print(f"[INFO] Input bundle: {args.input}")
 
     try:
@@ -77,6 +85,12 @@ def main():
     print_telemetry_report(telemetry)
 
     targets = context.get("classified_targets", [])
+    if config.arctic.enabled:
+        print(
+            f"[ARCTIC] Ships: {context.get('arctic_ships_count', 0)} | "
+            f"Icebergs: {context.get('icebergs_count', 0)} | "
+            f"Uncertain: {context.get('arctic_uncertain_count', 0)}"
+        )
     if targets:
         print("TACTICAL INTELLIGENCE (downlink queue order):")
         print(format_tactical_table(targets))

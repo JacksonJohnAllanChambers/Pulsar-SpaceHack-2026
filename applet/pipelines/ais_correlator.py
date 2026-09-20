@@ -50,6 +50,8 @@ class AISKinematicCorrelator(BasePipeline):
                 for sid in scenes}
         pairs = []
         for di, det in enumerate(detections):
+            if det.get("arctic_classification") == "ICEBERG":
+                continue
             lat, lon = det["world_coordinates"]["latitude"], det["world_coordinates"]["longitude"]
             for si, (plat, plon) in enumerate(predictions.get(det["scene_id"], [])):
                 dist = haversine_distance_nm(lat, lon, plat, plon)
@@ -74,6 +76,9 @@ class AISKinematicCorrelator(BasePipeline):
             used_ships.add((detections[di]["scene_id"], si))
 
         for di, det in enumerate(detections):
+            if det.get("arctic_classification") == "ICEBERG":
+                self._classify_iceberg(det)
+                continue
             if di in det_match:
                 si, dist, tier = det_match[di]
                 self._classify_matched(det, catalog[si], dist, off_track=tier == 1)
@@ -94,8 +99,15 @@ class AISKinematicCorrelator(BasePipeline):
         }
         for key, label in (("dark_vessels_count", "DARK_VESSEL"),
                            ("spoofing_anomalies_count", "AIS_KINEMATIC_MISMATCH"),
-                           ("confirmed_known_count", "CONFIRMED_KNOWN_VESSEL")):
+                           ("confirmed_known_count", "CONFIRMED_KNOWN_VESSEL"),
+                           ("icebergs_count", "ICEBERG")):
             context[key] = sum(1 for t in detections if t["classification"] == label)
+        if self.config.arctic.enabled:
+            context["arctic_ships_count"] = sum(1 for t in detections if t.get("arctic_classification") == "SHIP")
+            context["icebergs_count"] = sum(1 for t in detections if t.get("classification") == "ICEBERG")
+            context["arctic_uncertain_count"] = sum(
+                1 for t in detections if t.get("arctic_classification") == "UNCERTAIN"
+            )
         return context
 
     def _fix_age_hours(self, ship: Dict[str, Any], shutter: Optional[datetime]) -> float:
@@ -172,6 +184,22 @@ class AISKinematicCorrelator(BasePipeline):
             f"with no AIS broadcast within {cfg.spatial_gating_radius_nm} NM."
         )
         det["ais_status"] = "NO_AIS"
+
+    @staticmethod
+    def _classify_iceberg(det: Dict[str, Any]) -> None:
+        det.update(
+            matched_vessel=None,
+            matched_vessel_name=None,
+            ais_distance_nm=None,
+            classification="ICEBERG",
+            downlink_priority=0.02,
+            ais_status="NOT_APPLICABLE",
+            intelligence_notes=(
+                f"Arctic classifier identifies an iceberg candidate; ice probability "
+                f"{det.get('iceberg_probability', 0.0):.2f}, ship probability "
+                f"{det.get('ship_probability', 0.0):.2f}."
+            ),
+        )
 
     @staticmethod
     def _unobserved_broadcasters(catalog, predictions, scenes, used_ships) -> List[Dict[str, Any]]:

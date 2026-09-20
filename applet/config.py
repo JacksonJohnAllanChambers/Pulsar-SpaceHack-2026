@@ -77,6 +77,20 @@ class VerifierConfig(BaseModel):
     intra_op_threads: int = 4
 
 
+class ArcticConfig(BaseModel):
+    enabled: bool = False
+    iceberg_min_probability: float = 0.72
+    ship_min_probability: float = 0.62
+    decision_margin: float = 0.12
+    min_wake_length_m: float = 100.0
+    ice_brightness_low: float = 0.18
+    ice_brightness_high: float = 0.55
+    spectral_flatness_low: float = 0.55
+    spectral_flatness_high: float = 0.90
+    texture_low: float = 0.01
+    texture_high: float = 0.12
+
+
 class AISCorrelationConfig(BaseModel):
     spatial_gating_radius_nm: float = 1.0  # outer gate: beyond this a broadcaster is unrelated
     tight_gate_nm: float = 0.15  # inner gate at zero fix age (geolocation + AIS GPS error)
@@ -105,6 +119,7 @@ class AppletConfig(BaseModel):
     screening: ScreeningConfig = Field(default_factory=ScreeningConfig)
     detection: DetectionConfig = Field(default_factory=DetectionConfig)
     verifier: VerifierConfig = Field(default_factory=VerifierConfig)
+    arctic: ArcticConfig = Field(default_factory=ArcticConfig)
     ais_correlation: AISCorrelationConfig = Field(default_factory=AISCorrelationConfig)
     downlink: DownlinkConfig = Field(default_factory=DownlinkConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)

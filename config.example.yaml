@@ -49,6 +49,19 @@ verifier:
   physics_override_score: 0.95      # ... unless the physics evidence is this strong
   intra_op_threads: 4
 
+arctic:
+  enabled: false                    # opt in only for Arctic scenes until calibrated on iceberg labels
+  iceberg_min_probability: 0.72
+  ship_min_probability: 0.62
+  decision_margin: 0.12             # keep close calls as UNCERTAIN for human review
+  min_wake_length_m: 100
+  ice_brightness_low: 0.18
+  ice_brightness_high: 0.55
+  spectral_flatness_low: 0.55
+  spectral_flatness_high: 0.90
+  texture_low: 0.01
+  texture_high: 0.12
+
 ais_correlation:
   spatial_gating_radius_nm: 1.0
   tight_gate_nm: 0.15

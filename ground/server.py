@@ -76,6 +76,11 @@ def index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"), headers={"Cache-Control": "no-store"})
 
 
+@app.get("/arctic-explainer")
+def arctic_explainer():
+    return FileResponse(os.path.join(STATIC_DIR, "arctic_explainer.html"), headers={"Cache-Control": "no-store"})
+
+
 @app.get("/api/bundles")
 def bundles():
     return {"bundles": list_bundles()}

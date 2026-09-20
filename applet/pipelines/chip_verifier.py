@@ -17,6 +17,7 @@ import numpy as np
 from typing import Dict, Any, List, Optional
 
 from applet.core.base import BasePipeline
+from applet.pipelines.arctic_classifier import ArcticClassifier
 
 CHIP_SCALE = 0.10  # reflectance units mapped to 1.0 at the network input
 
@@ -36,6 +37,7 @@ class ChipVerifier(BasePipeline):
         self.model_path: Optional[str] = None
         self.status = "DISABLED"
         self.providers: List[str] = []
+        self.arctic_classifier = ArcticClassifier(config)
         if config.verifier.enabled:
             self._load()
 
@@ -86,9 +88,10 @@ class ChipVerifier(BasePipeline):
             "inference_ms": 0.0,
             "rejected": 0,
         }
+        chips = np.stack([d["chip_tensor"] for d in detections]) if detections else None
+        probs = None
 
         if self.session is not None and detections:
-            chips = np.stack([d["chip_tensor"] for d in detections])
             t0 = time.perf_counter()
             try:
                 probs = self.predict(chips)
@@ -106,6 +109,11 @@ class ChipVerifier(BasePipeline):
                     det["verifier_rejected"] = bool(
                         p < cfg.reject_below and det["physics_score"] < cfg.physics_override_score
                     )
+
+        if self.config.arctic.enabled and detections:
+            for index, det in enumerate(detections):
+                probability = float(probs[index]) if self.session is not None and probs is not None else None
+                self.arctic_classifier.classify(det, chips[index], probability)
 
         kept = [d for d in detections if not d.get("verifier_rejected")]
         rejected = [d for d in detections if d.get("verifier_rejected")]

@@ -18,7 +18,8 @@ from typing import Dict, Any, List
 from applet.config import AppletConfig
 
 _PROPERTY_KEYS = (
-    "detection_id", "scene_id", "classification", "downlink_priority", "target_type", "size_class",
+    "detection_id", "scene_id", "classification", "arctic_classification", "iceberg_probability",
+    "ship_probability", "arctic_features", "downlink_priority", "target_type", "size_class",
     "confidence", "physics_score", "verifier_prob", "heading_deg", "heading_ambiguous_180",
     "estimated_speed_knots", "speed_method", "hull_length_m", "hull_width_m", "wake_length_m",
     "kelvin_arms_detected", "kelvin_half_angle_deg", "matched_vessel", "ais_distance_nm", "intelligence_notes",
@@ -66,6 +67,12 @@ class DownlinkPackager:
             "dark_vessels": context.get("dark_vessels_count", 0),
             "kinematic_mismatches": context.get("spoofing_anomalies_count", 0),
             "confirmed_known": context.get("confirmed_known_count", 0),
+            "arctic": {
+                "enabled": self.config.arctic.enabled,
+                "ships": context.get("arctic_ships_count", 0),
+                "icebergs": context.get("icebergs_count", 0),
+                "uncertain": context.get("arctic_uncertain_count", 0),
+            },
             "chips_included": included_chips,
             "budget_kb": cfg.max_downlink_budget_kb,
         })
@@ -140,6 +147,12 @@ class DownlinkPackager:
                 "pass_id": self.config.mission.orbital_pass_id,
                 "total_targets": len(targets),
                 "dark_vessels": context.get("dark_vessels_count", 0),
+                "arctic": {
+                    "enabled": self.config.arctic.enabled,
+                    "ships": context.get("arctic_ships_count", 0),
+                    "icebergs": context.get("icebergs_count", 0),
+                    "uncertain": context.get("arctic_uncertain_count", 0),
+                },
             },
             "features": features,
         }
