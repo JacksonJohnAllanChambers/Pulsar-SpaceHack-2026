@@ -65,7 +65,7 @@ Concretely, what makes it Blade-shaped:
   our console or our tests — it needs one function and a directory of bands.
 * **It cannot take the spacecraft down.** Every stage degrades rather than raises: a missing band, a
   corrupt file, an absent ONNX runtime or a failed model load all fall back to a reduced result and
-  the pass still produces a bundle. 144 tests, many of which exist only to prove that.
+  the pass still produces a bundle. 147 tests, many of which exist only to prove that.
 * **It already runs in the flight container.** `linux/arm64`, `--memory=14g --cpus=6 --network none`,
   no GPU, no internet at runtime. Peak RSS ~1.0–2.6 GB depending on swath size.
 * **No accelerator dependency.** ONNX Runtime selects its provider at load time: CPU in the container,
