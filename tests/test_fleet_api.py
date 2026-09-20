@@ -42,30 +42,28 @@ def test_dispatch_api_reads_sent_folder(monkeypatch, tmp_path):
     assert (tmp_path / "fleet_alerts" / "longbeach" / "ping_S2_LONGBEACH_T001" / "info.xml.enc").is_file()
 
 
-def test_transfer_state_observes_stage_move_and_alert_metadata(monkeypatch, tmp_path):
+def test_transfer_state_observes_queue_to_sent_move_and_alert_metadata(monkeypatch, tmp_path):
     root = tmp_path / "src"
-    raw = root / "rawImages"
-    processing = root / "processing"
-    raw.mkdir(parents=True)
-    processing.mkdir()
+    priority = root / "downlink" / "queues" / "priority"
+    sent = root / "sent"
+    priority.mkdir(parents=True)
+    sent.mkdir()
     filename = "alert-v1__S2_LONGBEACH_T001__S2_LONGBEACH__lat-33.680000__lon--118.170000__DARK_VESSEL.jpg"
-    (raw / filename).write_bytes(b"jpeg")
+    (priority / filename).write_bytes(b"jpeg")
     reset_transfer_tracker(monkeypatch, root)
 
     first = server.transfer_state()
 
-    assert [stage["id"] for stage in first["stages"]] == [
-        "incoming", "processing", "priority", "standard", "no_ship", "sent"
-    ]
+    assert [stage["id"] for stage in first["stages"]] == ["priority", "standard", "sent"]
     assert first["files"][0]["alert"]["detection_id"] == "S2_LONGBEACH_T001"
-    assert first["events"][0]["event"] == "arrived"
+    assert first["events"][0]["event"] == "queued_priority"
 
-    (raw / filename).replace(processing / filename)
+    (priority / filename).replace(sent / filename)
     second = server.transfer_state()
 
-    assert second["files"][0]["stage"] == "processing"
-    assert second["events"][0]["event"] == "processing"
-    assert second["events"][0]["from_stage"] == "incoming"
+    assert second["files"][0]["stage"] == "sent"
+    assert second["events"][0]["event"] == "downlinked"
+    assert second["events"][0]["from_stage"] == "priority"
 
 
 def test_transfer_image_rejects_traversal(monkeypatch, tmp_path):

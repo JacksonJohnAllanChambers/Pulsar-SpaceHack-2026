@@ -42,8 +42,8 @@ from scripts.evaluate import score_context  # noqa: E402
 DATA_DIR = os.path.join(ROOT, "data")
 OUTPUT_DIR = os.path.join(DATA_DIR, "outputs", "gui")
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
-# The console is the one caller that feeds the file-queue downlink scheduler (src/pyFlows/workflow.py),
-# which drains src/downlink/queues into src/sent. Every other caller keeps crops under its output dir.
+# The console feeds the file-queue downlink scheduler, which drains src/downlink/queues into src/sent.
+# Every other caller keeps crops under its output dir.
 QUEUE_DIR = os.path.join(ROOT, "src", "downlink", "queues")
 SENT_DIR = os.path.join(ROOT, "src", "sent")
 FLEET_ALERT_PATH = os.path.join(DATA_DIR, "outputs", "fleet_alerts.json")
@@ -53,19 +53,13 @@ MAX_LAYER_PX = 2048
 TRANSFER_EVENT_LIMIT = 100
 IMAGE_EXTENSIONS = {".bmp", ".gif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
 TRANSFER_STAGE_LABELS = {
-    "incoming": "Incoming",
-    "processing": "Processing",
     "priority": "Priority queue",
     "standard": "Standard queue",
-    "no_ship": "No ship",
     "sent": "Downlink sent",
 }
 TRANSFER_EVENT_TYPES = {
-    "incoming": "arrived",
-    "processing": "processing",
     "priority": "queued_priority",
     "standard": "queued_standard",
-    "no_ship": "no_ship",
     "sent": "downlinked",
 }
 
@@ -117,11 +111,8 @@ def list_bundles():
 def transfer_stage_dirs() -> Dict[str, Path]:
     root = Path(TRANSFER_ROOT)
     return {
-        "incoming": root / "rawImages",
-        "processing": root / "processing",
         "priority": root / "downlink" / "queues" / "priority",
         "standard": root / "downlink" / "queues" / "nonPriority",
-        "no_ship": root / "noShipDetected",
         "sent": root / "sent",
     }
 
