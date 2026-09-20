@@ -13,7 +13,9 @@ Real chips can be mixed in with --real-npz (arrays "chips" [N,64,64,4] reflectan
     python training/train_verifier.py --scenes 500 --epochs 14
 
 Outputs applet/models/verifier_fp32.onnx, verifier_int8.onnx and model_card.json
-(size / latency / accuracy before and after quantisation).
+(size / latency / accuracy before and after quantisation). --out-tag writes a variant
+alongside them (verifier_<tag>_int8.onnx, model_card_<tag>.json) instead of overwriting
+the flight model, so a candidate can be scored without standing the current one down.
 """
 
 import os
@@ -134,25 +136,46 @@ def main():
     ap.add_argument("--real-npz", nargs="*", default=None,
                     help="npz files of real labelled chips (arrays 'chips', 'labels'). Append *N to "
                          "oversample one of them, e.g. adjudicated.npz*8 -- a few hundred "
-                         "hand-adjudicated chips are otherwise swamped by thousands of mined ones")
+                         "hand-adjudicated chips are otherwise swamped by thousands of mined ones. "
+                         "Append @N to subsample to at most N chips, e.g. ice_chips.npz@1200: a "
+                         "one-sided corpus (negatives from a region with no positives anywhere) has "
+                         "to enter at a controlled ratio or the network can learn the region, not "
+                         "the object. Both may be combined: file.npz*4@300")
+    ap.add_argument("--out-dir", default=MODEL_DIR,
+                    help="where to write the ONNX files and model card (default applet/models)")
+    ap.add_argument("--out-tag", default="",
+                    help="suffix for the output files: --out-tag ice writes verifier_ice_fp32.onnx, "
+                         "verifier_ice_int8.onnx and model_card_ice.json, leaving the flight model "
+                         "in place")
     args = ap.parse_args()
+    tag = f"_{args.out_tag}" if args.out_tag else ""
+    out_dir = args.out_dir
 
     import torch
     import onnxruntime as ort
     from onnxruntime.quantization import quantize_static, CalibrationDataReader, QuantFormat, QuantType
 
     torch.manual_seed(args.seed)
-    os.makedirs(MODEL_DIR, exist_ok=True)
+    os.makedirs(out_dir, exist_ok=True)
 
     print(f"[1/4] Mining candidate chips from {args.scenes} synthetic scenes...")
     chips, labels, groups = mine_chips(args.scenes, args.size, args.seed)
     source = {"synthetic_chips": int(len(labels)), "real_chips": 0}
+    spec_rng = np.random.default_rng(args.seed)
     for spec in (args.real_npz or []):
-        path, _, mult = spec.partition("*")
-        repeat = int(mult) if mult else 1
+        head, at, cap_s = spec.rpartition("@")
+        body, cap = (head, int(cap_s)) if at else (spec, None)
+        path, star, mult = body.rpartition("*")
+        if not star:
+            path, repeat = body, 1
+        else:
+            repeat = int(mult)
         real = np.load(path)
         rc = real["chips"].astype(np.float32)
         rl = real["labels"].astype(np.float32)
+        if cap is not None and cap < len(rl):
+            pick = np.sort(spec_rng.choice(len(rl), size=cap, replace=False))
+            rc, rl = rc[pick], rl[pick]
         if repeat > 1:
             rc = np.repeat(rc, repeat, axis=0)
             rl = np.repeat(rl, repeat, axis=0)
@@ -163,12 +186,14 @@ def main():
         source["real_chips"] += int(len(rl))
         # Two different corpora can both be called train_chips.npz; keep the parent directory
         # so the model card says which is which.
-        tag = "/".join(os.path.normpath(path).replace("\\", "/").split("/")[-2:])
-        source.setdefault("real_sources", []).append({"file": tag,
-                                                      "chips": int(len(real["labels"])),
-                                                      "repeat": repeat})
+        src_tag = "/".join(os.path.normpath(path).replace("\\", "/").split("/")[-2:])
+        entry = {"file": src_tag, "chips": int(len(real["labels"])), "repeat": repeat}
+        if cap is not None:
+            entry["subsampled_to"] = int(min(cap, len(real["labels"])))
+        source.setdefault("real_sources", []).append(entry)
         print(f"      + {len(rl)} real chips from {os.path.basename(path)} "
-              f"({int(rl.sum())} pos){' x' + str(repeat) if repeat > 1 else ''}")
+              f"({int(rl.sum())} pos){' x' + str(repeat) if repeat > 1 else ''}"
+              f"{' subsampled to ' + str(cap) if cap is not None else ''}")
 
     x_all = normalise_chips(chips)
     val_mask = (groups % 5) == 0  # split by scene, never by chip
@@ -203,8 +228,8 @@ def main():
         print(f"      epoch {epoch + 1:2d}  loss {total / len(perm):.4f}  val acc {acc:.3f}  AUC {auc_score(y_va, p):.4f}")
 
     print("[3/4] Exporting ONNX and quantising to INT8...")
-    fp32_path = os.path.join(MODEL_DIR, "verifier_fp32.onnx")
-    int8_path = os.path.join(MODEL_DIR, "verifier_int8.onnx")
+    fp32_path = os.path.join(out_dir, f"verifier{tag}_fp32.onnx")
+    int8_path = os.path.join(out_dir, f"verifier{tag}_int8.onnx")
     model.eval()
     torch.onnx.export(model, torch.zeros(1, 4, CHIP, CHIP), fp32_path, input_names=["chips"], output_names=["logit"],
                       dynamic_axes={"chips": {0: "n"}, "logit": {0: "n"}}, opset_version=17, dynamo=False)
@@ -221,6 +246,7 @@ def main():
 
     print("[4/4] Benchmarking FP32 vs INT8 on the ONNX Runtime CPU provider...")
     card = {"architecture": "4x[conv3x3-BN-ReLU-pool] -> GAP -> FC", "parameters": int(n_params),
+            "command": "python " + " ".join([os.path.basename(sys.argv[0])] + sys.argv[1:]),
             "input": "N x 4 x 64 x 64 (R,G,B,NIR), median-subtracted reflectance / 0.10", "training_data": source,
             "validation_chips": int(len(y_va)), "variants": {}}
     for name, path in (("fp32", fp32_path), ("int8", int8_path)):
@@ -240,9 +266,11 @@ def main():
             "latency_ms_per_32_chips": round(ms, 2), "latency_ms_per_chip": round(ms / len(batch), 3),
         }
         print(f"      {name}: {card['variants'][name]}")
-    with open(os.path.join(MODEL_DIR, "model_card.json"), "w", encoding="utf-8") as f:
+    card_path = os.path.join(out_dir, f"model_card{tag}.json")
+    with open(card_path, "w", encoding="utf-8") as f:
         json.dump(card, f, indent=2)
-    print(f"[DONE] Models + model_card.json written to {MODEL_DIR}")
+    print(f"[DONE] {os.path.basename(fp32_path)}, {os.path.basename(int8_path)} + "
+          f"{os.path.basename(card_path)} written to {out_dir}")
 
 
 if __name__ == "__main__":

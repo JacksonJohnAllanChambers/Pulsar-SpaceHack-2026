@@ -1,0 +1,46 @@
+{
+  "architecture": "4x[conv3x3-BN-ReLU-pool] -> GAP -> FC",
+  "parameters": 47041,
+  "command": "python train_verifier.py --scenes 500 --epochs 14 --real-npz C:/Users/jackc/Documents/Github/Pulsar-SpaceHack-2026/data/real/sen2ms/train_chips.npz C:/Users/jackc/Documents/Github/Pulsar-SpaceHack-2026/data/real/adjudicated/train_chips.npz*8 C:/Users/jackc/Documents/Github/Pulsar-SpaceHack-2026/data/real/arctic_ice/ice_chips_train.npz --out-dir C:/Users/jackc/Documents/Github/Pulsar-SpaceHack-2026/applet/models --out-tag ice",
+  "input": "N x 4 x 64 x 64 (R,G,B,NIR), median-subtracted reflectance / 0.10",
+  "training_data": {
+    "synthetic_chips": 11577,
+    "real_chips": 8287,
+    "real_sources": [
+      {
+        "file": "sen2ms/train_chips.npz",
+        "chips": 3608,
+        "repeat": 1
+      },
+      {
+        "file": "adjudicated/train_chips.npz",
+        "chips": 368,
+        "repeat": 8
+      },
+      {
+        "file": "arctic_ice/ice_chips_train.npz",
+        "chips": 1735,
+        "repeat": 1
+      }
+    ]
+  },
+  "validation_chips": 3987,
+  "variants": {
+    "fp32": {
+      "file": "verifier_ice_fp32.onnx",
+      "size_kb": 185.4,
+      "val_accuracy": 0.7951,
+      "val_auc": 0.9777,
+      "latency_ms_per_32_chips": 4.69,
+      "latency_ms_per_chip": 0.147
+    },
+    "int8": {
+      "file": "verifier_ice_int8.onnx",
+      "size_kb": 59.0,
+      "val_accuracy": 0.8036,
+      "val_auc": 0.9758,
+      "latency_ms_per_32_chips": 4.52,
+      "latency_ms_per_chip": 0.141
+    }
+  }
+}
