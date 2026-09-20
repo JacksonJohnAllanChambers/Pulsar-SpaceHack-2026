@@ -311,6 +311,10 @@ def main() -> int:
     ap.add_argument("--no-verifier", action="store_true")
     ap.add_argument("--arctic", action="store_true", help="enable the ship / iceberg / uncertain call")
     ap.add_argument("--labels", default=None, help="labels.json exported from the contact sheet")
+    ap.add_argument("--reference", default=None,
+                    help="contacts of the run the labels were made on (data/labels/*_reference_contacts.json). "
+                         "Detection ids renumber whenever the contact set changes, so with this the verdicts "
+                         "are carried onto this run BY POSITION instead of being matched by id")
     args = ap.parse_args()
 
     config = AppletConfig.load_from_yaml(args.config)
@@ -327,6 +331,14 @@ def main() -> int:
         with open(args.labels, "r", encoding="utf-8") as f:
             labels = json.load(f).get("labels", {})
         print(f"[labels] {len(labels)} human verdicts loaded from {args.labels}")
+        if args.reference:
+            from transfer_labels import transfer
+            with open(args.reference, "r", encoding="utf-8") as f:
+                reference = json.load(f)["contacts"]
+            labels, stats = transfer(reference, labels, context.get("classified_targets", []), 4.0)
+            print(f"[labels] carried by position: {stats['labels_carried']} of {stats['contacts']} contacts, "
+                  f"{stats['miss_verdicts_carried']} MISS verdicts, "
+                  f"{stats['contacts_without_a_labelled_counterpart']} contacts with no labelled counterpart")
 
     result = score(context, telemetry, labels)
     print_report(result)

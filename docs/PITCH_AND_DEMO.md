@@ -208,7 +208,7 @@ and it makes the evidence tangible.
 ## 4. The numbers (keep this slide honest)
 
 **Temperate benchmark — 16 US scenes vs same-day NOAA AIS** (`scripts/scorecard.py -i data/real/s2_us_bundle`).
-571 contacts hand-adjudicated. **Recall 0.912 · precision 0.697 · 105 false alarms** (18.9 per 1000 km²).
+571 contacts hand-adjudicated. **Recall 0.912 · precision 0.697 · 105 false alarms** (18.5 per 1000 km²).
 
 > Recall is reported against the broadcasters the sensor could actually see: a ship alongside a quay is
 > dropped on purpose by the 200 m shoreline keep-out, and counting it as a miss would understate a number
@@ -238,7 +238,8 @@ if asked: LE BOREAL, 142 m at 0.1 kn, flagged `CLEAR_WATER_NO_TARGET`.
 0.693 → 0.697. The physics module is free: it costs nothing in temperate water.
 
 **Ship or ice (`--arctic`, opt-in; Megan's three-way design)** -- `scripts/scorecard.py -i
-data/real/svalbard_poc --arctic --labels data/outputs/svalbard_review/labels.json`:
+data/real/svalbard_poc --arctic --labels data/labels/svalbard_labels.json --reference
+data/labels/svalbard_reference_contacts.json`:
 
 | Svalbard, hand labels | off | `--arctic` |
 | :-- | --: | --: |

@@ -170,11 +170,11 @@ def load(name, bundle, labels_path, reference_glob):
 
 def main() -> int:
     _keep_chips()
-    rows = (load("svalbard", "data/real/svalbard_poc", "data/outputs/svalbard_review/labels.json",
-                 "data/outputs/svalbard*/contacts.json")
+    rows = (load("svalbard", "data/real/svalbard_poc", "data/labels/svalbard_labels.json",
+                 "data/labels/svalbard_reference_contacts.json")
             + load("alaska", "data/real/arctic_probe", None, "")
-            + load("us", "data/real/s2_us_bundle", "data/outputs/review/labels_team.json",
-                   "data/outputs/us_scorecard*/contacts.json"))
+            + load("us", "data/real/s2_us_bundle", "data/labels/us_labels.json",
+                   "data/labels/us_reference_contacts.json"))
     pick = lambda s, t: [r for r in rows if r["set"] == s and r["truth"] == t]  # noqa: E731
 
     print("\n" + "=" * 78 + "\n1. ORIGINAL icebergWatch evidence (needs score >= 0.72 to say ICEBERG)")

@@ -166,7 +166,7 @@ replaced the evidence, because measured on real contacts (`python scripts/iceber
 | A wake or lead means SHIP | wrong on **21 of 21** Alaska contacts and 3 of 5 adjudicated Svalbard ones. Leads and brash streaks are linear too, so the image may *protect* a contact from the ice call but only a transponder says SHIP |
 | **Crowding, in a scene the screener found ice in** | what shipped: >= 3 other bright objects in the contact's chip, no wake, no lead, no AIS |
 
-End to end on Svalbard (`scorecard.py -i data/real/svalbard_poc --arctic --labels ...`):
+End to end on Svalbard (`scorecard.py -i data/real/svalbard_poc --arctic --labels data/labels/svalbard_labels.json --reference data/labels/svalbard_reference_contacts.json`):
 
 | | off | `--arctic` |
 | :-- | --: | --: |
@@ -806,13 +806,18 @@ RGB, no NIR) is a candidate second source of real hard negatives.
 
 ## Layout
 
+How it all fits together is in [`docs/OVERVIEW.md`](docs/OVERVIEW.md).
+
 ```
-applet/            flight code: config, cli, runner, core/ (validator, telemetry), pipelines/, packaging/, models/
+applet/            flight code: runner, core/ (validator, telemetry, thermal, governor), pipelines/, packaging/, models/
+ground/            FastAPI + single-page console, explainer pages, transfer viewer, fleet alerts
+src/pyFlows/       file-queue downlink workflow
 simulation/        scene renderer (ground-side)
 training/          verifier training, ONNX export, INT8 quantisation
-ground/            FastAPI + single-page console
-scripts/           setup_data (start here), bundle generator, Sentinel-2 / NOAA fetchers, evaluate, benchmark
+scripts/           setup_data (start here), fetchers, scorecard, benchmark, soak, and the study behind each claim
+data/labels/       the team's hand verdicts on 571 US + 51 Svalbard contacts
+review/            the contact sheets they were made on
 tests/             162 tests
-docker/            Dockerfile.arm64
-docs/              SETUP (collaborators start here), hackathon rules, rubric, track notes, pitch template
+docker/            Dockerfile.arm64 + pinned constraints
+docs/              OVERVIEW (how it works), SETUP (datasets), RUBRIC_SPEC_SHEET, PITCH_AND_DEMO, GALAXIA_ALIGNMENT, LABELLING
 ```

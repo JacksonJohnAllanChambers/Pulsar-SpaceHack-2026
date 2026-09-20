@@ -48,7 +48,7 @@ on the same screen as the number, and used it to drive cascade depth rather than
 | **Determinism across architectures** | Same bundle → **same SHA-256 tarball** on x86-64 Windows, ARM64 macOS and linux/arm64 container, across different numpy / OpenCV / ONNX builds | [M] | `tests/test_pipeline.py::test_output_is_byte_identical_across_runs` |
 | Cannot crash the spacecraft | Every stage degrades rather than raises — missing band, corrupt file, absent ONNX runtime, failed model load all still produce a bundle | [M] | `tests/test_validator.py` |
 | Runs in the judges' container | Dockerfile COPY set staged and executed by a test, so flight code cannot import something the image does not ship | [M] | `tests/test_flight_image.py` |
-| Real-data benchmark | 16 US Sentinel-2 scenes vs same-day NOAA AIS, **571 contacts hand-adjudicated** | [M] | `scripts/scorecard.py -i data/real/s2_us_bundle` |
+| Real-data benchmark | 16 US Sentinel-2 scenes vs same-day NOAA AIS, **571 contacts hand-adjudicated** | [M] | `scripts/scorecard.py -i data/real/s2_us_bundle --labels data/labels/us_labels.json --reference ...` |
 
 ---
 
@@ -84,10 +84,10 @@ Full sourcing with dates: `docs/GALAXIA_ALIGNMENT.md`.
 
 | | |
 | :-- | :-- |
-| Live demo | `python -m ground.server` — the unmodified onboard code path, visualised. Six-click path rehearsed in `docs/PITCH_AND_DEMO_TEMPLATE.md` §3. No CDN, no internet. |
+| Live demo | `python -m ground.server` — the unmodified onboard code path, visualised. Six-click path rehearsed in `docs/PITCH_AND_DEMO.md` §3. No CDN, no internet. |
 | Evidence you can open | Self-contained contact sheets: every contact as true-colour + NIR at two zooms, with the verdict a human gave it. |
 | Honesty on screen | The governor panel is badged **MODELLED** on the same screen as the temperature. |
-| Limitations | `docs/PITCH_AND_DEMO_TEMPLATE.md` §6, volunteered before being asked. |
+| Limitations | `docs/PITCH_AND_DEMO.md` §6, volunteered before being asked. |
 
 ---
 
@@ -99,7 +99,7 @@ Full sourcing with dates: `docs/GALAXIA_ALIGNMENT.md`.
 | :-- | --: |
 | Recall vs AIS the sensor could see | **0.912** |
 | Precision, 571 contacts hand-adjudicated | **0.697** |
-| False alarms | 105 (18.9 per 1000 km²) |
+| False alarms | 105 (18.5 per 1000 km²) |
 | Heading error vs reported COG | 4° median |
 
 ### Arctic — Svalbard vs Kystverket AIS
@@ -180,10 +180,10 @@ Considered and **not** used: MASATI (research-use-only licence, RGB with no NIR)
 ```bash
 python scripts/setup_data.py --synthetic     # bundles, no network
 python -m pytest -q                          # 162 tests
-python scripts/scorecard.py -i data/real/s2_us_bundle      # temperate benchmark
-python scripts/scorecard.py -i data/real/svalbard_poc --labels data/outputs/svalbard_review/labels.json
+python scripts/scorecard.py -i data/real/s2_us_bundle --labels data/labels/us_labels.json --reference data/labels/us_reference_contacts.json   # temperate benchmark
+python scripts/scorecard.py -i data/real/svalbard_poc --labels data/labels/svalbard_labels.json --reference data/labels/svalbard_reference_contacts.json
 python scripts/scorecard.py -i data/real/fundy_bundle      # Atlantic Canada
-python scripts/scorecard.py -i data/real/svalbard_poc --arctic --labels data/outputs/svalbard_review/labels.json   # ship or ice
+python scripts/scorecard.py -i data/real/svalbard_poc --arctic --labels data/labels/svalbard_labels.json --reference data/labels/svalbard_reference_contacts.json   # ship or ice
 python scripts/iceberg_study.py                            # the evidence behind it, and what was rejected
 python scripts/orbit_pass_sim.py --input data/eval_bundle --repeats 5   # governor, synthetic
 python scripts/cue_geometry.py                             # cue-latency argument
