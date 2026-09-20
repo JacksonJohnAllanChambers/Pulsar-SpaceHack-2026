@@ -1,4 +1,4 @@
-# Tactical Edge Sentinel × Galaxia Mission Systems
+# IRIS × Galaxia Mission Systems
 
 **What this document is.** A technical argument that this applet belongs on Galaxia's spacecraft,
 written for someone who works there. Every claim about Galaxia is sourced to a dated public
@@ -52,7 +52,7 @@ exactly the deployment contract our applet was written against, by coincidence o
 rather than design:
 
 ```
-   HyperScape100 ──LVDS/SpaceWire──►  [ BLADE ]  Tactical Edge Sentinel
+   HyperScape100 ──LVDS/SpaceWire──►  [ BLADE ]  IRIS
                                           │      screener → CFAR + wake ray transform
                                           │      → 59 KB INT8 CNN → AIS correlation
                                           ▼

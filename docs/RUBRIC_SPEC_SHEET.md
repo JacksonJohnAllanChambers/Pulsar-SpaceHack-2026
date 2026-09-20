@@ -1,4 +1,4 @@
-# Tactical Edge Sentinel — rubric spec sheet
+# IRIS — rubric spec sheet
 
 One page per judge. Every row is a claim, its evidence, and the command that reproduces it.
 

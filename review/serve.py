@@ -63,7 +63,7 @@ def main() -> int:
     url = f"http://127.0.0.1:{port}"
 
     print("=" * 62)
-    print("  Tactical Edge Sentinel - contact review")
+    print("  IRIS - contact review")
     print("=" * 62)
     print(f"  {url}")
     print(f"  shared label store: {'ON' if endpoint else 'OFF - verdicts stay in this browser'}")

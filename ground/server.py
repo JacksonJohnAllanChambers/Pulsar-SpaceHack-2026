@@ -63,7 +63,7 @@ TRANSFER_EVENT_TYPES = {
     "sent": "downlinked",
 }
 
-app = FastAPI(title="Tactical Edge Sentinel - Ground Console")
+app = FastAPI(title="IRIS - Ground Console")
 _state: Dict[str, Any] = {"context": None, "scenes": {}, "chips": {}, "downlink": None}
 _lock = threading.Lock()
 _transfer_lock = threading.Lock()

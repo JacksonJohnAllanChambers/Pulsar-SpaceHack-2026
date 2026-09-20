@@ -1,4 +1,4 @@
-# Submission -- Tactical Edge Sentinel
+# Submission -- IRIS (Infrared Recon & ID Satellite)
 
 Pulsar SpaceHack 2026 · Track 1 (free-for-all) · onboard dark-vessel detection for a small VNIR satellite.
 
