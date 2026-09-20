@@ -34,7 +34,9 @@ class EdgeTelemetryTracker:
         self.output_bytes: int = 0
         self.stages: List[Dict[str, Any]] = []
         self.records: Dict[str, Any] = {}
-        self._cpu_start = None
+        self._cpu_start = 0.0
+        self._cpu_end = None
+        self._psutil_cpu_start = 0.0
         self._stop = threading.Event()
         self._sampler = None
 
@@ -42,7 +44,8 @@ class EdgeTelemetryTracker:
         self.start_time = time.perf_counter()
         self.start_memory_mb = self.process.memory_info().rss / (1024 * 1024)
         self.peak_memory_mb = self.start_memory_mb
-        self._cpu_start = self.process.cpu_times()
+        self._cpu_start = time.process_time()
+        self._psutil_cpu_start = self._psutil_cpu()
         self._stop.clear()
         self._sampler = threading.Thread(target=self._sample_loop, daemon=True)
         self._sampler.start()
@@ -51,6 +54,13 @@ class EdgeTelemetryTracker:
     def _sample_loop(self):
         while not self._stop.wait(self.sample_interval_s):
             self.update_peak_memory()
+
+    def _psutil_cpu(self) -> float:
+        try:
+            c = self.process.cpu_times()
+            return c.user + c.system
+        except psutil.Error:
+            return 0.0
 
     def update_peak_memory(self):
         try:
@@ -65,21 +75,26 @@ class EdgeTelemetryTracker:
         """
         Time one stage, and measure how much of the CPU budget it actually used.
 
-        `cores_busy` is CPU-seconds over wall-seconds for this stage alone. It is a real
-        measurement -- the container gives us honest `cpu_times()` -- and it is what the
-        EdgeGovernor turns into a power estimate, so a stage that parallelises well reads
-        as hotter than one that blocks on I/O. A cumulative average would smear that out
-        and the governor would react to the wrong thing.
+        `cores_busy` is CPU-seconds over wall-seconds for this stage alone, and it is what the
+        EdgeGovernor turns into a power estimate -- so a stage that parallelises well reads as
+        hotter than one that blocks on I/O. A cumulative average would smear that out and the
+        governor would react to the wrong thing.
+
+        CPU time comes from `time.process_time()` (process-wide, all threads, user+system) and
+        NOT from `psutil.cpu_times()`. Under QEMU -- which is the judges' environment and ours --
+        `/proc/self/stat` reports utime and stime as 0, so psutil reads every stage as free:
+        a 2 s busy loop in the linux/arm64 container returns 0.0 through psutil and 2.52 s
+        through `time.process_time()`. Both agree natively. Getting this wrong meant the whole
+        emulated run reported "0.0 of 6 cores busy" and fed the governor an idle chip.
         """
         t0 = time.perf_counter()
-        cpu0 = self.process.cpu_times()
+        cpu0 = time.process_time()
         try:
             yield
         finally:
             self.update_peak_memory()
             seconds = time.perf_counter() - t0
-            cpu1 = self.process.cpu_times()
-            cpu_seconds = (cpu1.user + cpu1.system) - (cpu0.user + cpu0.system)
+            cpu_seconds = time.process_time() - cpu0
             self.stages.append({
                 "stage": name,
                 "seconds": round(seconds, 4),
@@ -110,14 +125,22 @@ class EdgeTelemetryTracker:
     def snapshot(self, status: str = "RUNNING") -> Dict[str, Any]:
         now = self.end_time or time.perf_counter()
         duration = max(now - self.start_time, 1e-4)
-        cpu = self.process.cpu_times()
-        cpu_s = (cpu.user + cpu.system) - (self._cpu_start.user + self._cpu_start.system)
+        cpu_now = self._cpu_end if self._cpu_end is not None else time.process_time()
+        cpu_s = cpu_now - self._cpu_start
+        # Two clocks disagreeing IS the emulation signature: user-mode QEMU leaves utime and stime
+        # at 0 in /proc/self/stat (so psutil reads nothing) while CLOCK_PROCESS_CPUTIME_ID keeps
+        # counting -- and what it counts includes QEMU's own translation threads, not just ours.
+        # A single-threaded 2 s spin in the linux/arm64 container bills 2.52 CPU-seconds. So the
+        # figure below is honest about the *process* and is NOT this applet's core utilisation:
+        # take that from a native run. Flagged rather than hidden, like validated_on_hardware.
+        emulated = cpu_s > 0.5 and (self._psutil_cpu() - self._psutil_cpu_start) < 0.05 * cpu_s
         rec = {
             "label": self.label,
             "wall_clock_time_s": round(duration, 4),
             "cpu_time_s": round(cpu_s, 4),
             "avg_cores_busy": round(cpu_s / duration, 2),
             "cpu_core_budget": JETSON_CPU_CORES,
+            "cpu_time_includes_emulator": emulated,
             "start_memory_mb": round(self.start_memory_mb, 2),
             "peak_memory_mb": round(self.peak_memory_mb, 2),
             "memory_budget_mb": JETSON_MEMORY_BUDGET_MB,
@@ -130,6 +153,7 @@ class EdgeTelemetryTracker:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.end_time = time.perf_counter()
+        self._cpu_end = time.process_time()
         self._stop.set()
         if self._sampler is not None:
             self._sampler.join(timeout=1.0)
@@ -149,6 +173,9 @@ def print_telemetry_report(r: Dict[str, Any]) -> None:
     print("=" * 64)
     print(f"  Execution time     {r['wall_clock_time_s']} s  (CPU {r['cpu_time_s']} s, "
           f"{r['avg_cores_busy']} of {r['cpu_core_budget']} cores busy)")
+    if r.get("cpu_time_includes_emulator"):
+        print("                     CPU time includes the emulator's own threads -- not this "
+              "applet's core usage; measure that natively")
     for s in r["stages"]:
         print(f"    - {s['stage']:<28}{s['seconds']:>9.4f} s")
     print(f"  Peak RAM (RSS)     {r['peak_memory_mb']} MB  ({r['memory_budget_used_pct']}% of 14 GB budget)")

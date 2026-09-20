@@ -21,7 +21,7 @@ device? CPU? Temp? Does it take a really long time to run?"*
 | Their question | Our answer | Tag | Reproduce |
 | :-- | :-- | :-- | :-- |
 | RAM within device limits? | **2.09 GB peak** on a full 4096² swath = **14.6 %** of the 14 GB cap | [M] | `scripts/benchmark.py` |
-| CPU? | 2.85 of 6 cores busy average; headroom unspent | [M] | `edge_telemetry.json` per pass |
+| CPU? | 2.85 of 6 cores busy average; headroom unspent. **Measured natively** — inside QEMU this figure counts the emulator's own threads and pins at 6.0, so a run there sets `cpu_time_includes_emulator` and the report says not to quote it | [M] | `edge_telemetry.json` per pass |
 | **Temp?** | Two-node orbital thermal model predicts junction temperature and **drives a real decision** — sustainable SoC power **34.6 W eclipse vs 18.9 W sunlit** | [Mo] | `scripts/orbit_pass_sim.py --skip-cost` |
 | Long to run? | **1.61 s** per full swath, native ARM64 (M4, 6 threads) | [M] | `scripts/run_on_macmini.sh --native` |
 | In the judging container? | 16 real scenes in **5.33 s**, **2,603 MB = 18.2 %** of cap, linux/arm64, no GPU, no network | [M] | `scripts/run_emulated.sh` |
