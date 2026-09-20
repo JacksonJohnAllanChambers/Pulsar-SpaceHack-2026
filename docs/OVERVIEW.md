@@ -44,10 +44,10 @@ and runs on every push.
   ground console, the benchmarks and every test -- there is no separate "demo path".
 * **`ground/`** is a FastAPI server and a single-page console that runs that same code path and draws
   what it did. No CDN, no internet.
-* **`src/pyFlows/`** is a file-queue workflow that models the spacecraft side of the downlink: images
-  move raw -> processing -> detection -> priority / non-priority queues, and a rate-limited, AES-256-GCM
-  encrypted sender drains them three priority items to one non-priority. Delivered dark-vessel alerts
-  are routed to the nearest response fleet on the ground.
+* **`src/pyFlows/`** models the spacecraft side of the downlink. The pass writes context crops into
+  `queues/priority` and `queues/nonPriority`; a rate-limited, AES-256-GCM encrypted sender drains them
+  three priority items to one non-priority, and delivered dark-vessel alerts are routed to the nearest
+  response fleet on the ground.
 
 ## The cascade, stage by stage
 
@@ -202,7 +202,7 @@ applet/            flight code
   packaging/         byte-reproducible downlink tarball
   models/            59 KB INT8 verifier, FP32 fallback, model card
 ground/            FastAPI server, console, explainer pages, transfer viewer, fleet alerts
-src/pyFlows/       file-queue downlink workflow (raw -> processing -> detection -> timed downlink)
+src/pyFlows/       rate-limited, encrypted downlink scheduler draining the pass's priority queues
 simulation/        seeded scene renderer used for tuning and held-out synthetic tests
 training/          chip mining, verifier training, ONNX export, INT8 quantisation, evaluation
 scripts/           setup_data (start here), fetchers, scorecard, benchmark, soak, and the studies

@@ -74,3 +74,6 @@ data/raw/*
 
 # Generated cinematic media and render intermediates
 /.animation/
+
+# Committed once by accident: a render virtualenv
+.cpython-render-venv/
