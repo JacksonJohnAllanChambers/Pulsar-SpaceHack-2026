@@ -18,6 +18,7 @@ from typing import Dict, Any, List, Optional
 
 from applet.core.base import BasePipeline
 from applet.core.governor import active_profile
+from applet.pipelines.arctic_classifier import ArcticClassifier
 
 CHIP_SCALE = 0.10  # reflectance units mapped to 1.0 at the network input
 
@@ -37,6 +38,7 @@ class ChipVerifier(BasePipeline):
         self.model_path: Optional[str] = None
         self.status = "DISABLED"
         self.providers: List[str] = []
+        self.arctic = ArcticClassifier(config)
         if config.verifier.enabled:
             self._load()
 
@@ -126,6 +128,8 @@ class ChipVerifier(BasePipeline):
             scene["rejected_candidates"] = [d for d in dets if d.get("verifier_rejected")]
             scene["detections"] = [d for d in dets if not d.get("verifier_rejected")]
 
+        self._arctic_evidence(context, kept)
+
         for d in detections:
             d.pop("chip_tensor", None)
 
@@ -135,3 +139,18 @@ class ChipVerifier(BasePipeline):
         context["verifier_info"] = info
         context.setdefault("detection_funnel", {})["verified"] = len(kept)
         return context
+
+    def _arctic_evidence(self, context: Dict[str, Any], detections: List[Dict[str, Any]]) -> None:
+        """Ship-or-ice evidence has to be read here: this is the last stage that still holds the chip.
+        The verdict waits for the AIS correlator, because a transponder outranks any of it."""
+        if not self.config.arctic.enabled:
+            return
+        icy = {s["id"]: s for s in context.get("screened_scenes", []) if self.arctic.applies(s)}
+        for det in detections:
+            scene = icy.get(det["scene_id"])
+            if scene is None or "chip_tensor" not in det:
+                continue
+            try:
+                det["arctic_evidence"] = self.arctic.evidence(det["chip_tensor"], float(scene["gsd_m"]))
+            except Exception:
+                det["arctic_evidence"] = None  # no evidence is UNCERTAIN downstream, never a lost contact

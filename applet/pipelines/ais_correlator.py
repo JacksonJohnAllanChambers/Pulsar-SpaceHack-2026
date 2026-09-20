@@ -7,6 +7,8 @@ one-to-one against optical detections. What falls out of the match is the intell
   DARK_VESSEL              seen optically, nobody broadcasting nearby
   AIS_KINEMATIC_MISMATCH   a broadcaster is nearby but its course/speed contradict the wake
   CONFIRMED_KNOWN_VESSEL   position and kinematics agree (lowest downlink priority)
+  ICEBERG                  opt-in (arctic.enabled): no AIS, no wake, one of a field of bright objects
+                           in an icy scene -- demoted below everything else, still downlinked
   AIS_NOT_OBSERVED         AIS claims a ship in clear open water and nothing is there
 """
 
@@ -14,6 +16,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
 
 from applet.core.base import BasePipeline
+from applet.pipelines.arctic_classifier import ArcticClassifier
 from applet.utils.geo import project_dead_reckoning, haversine_distance_nm, angular_difference_deg
 
 
@@ -27,6 +30,10 @@ def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
 
 
 class AISKinematicCorrelator(BasePipeline):
+    def __init__(self, config):
+        super().__init__(config)
+        self.arctic = ArcticClassifier(config)
+
     # Kept as static aliases: other tools and tests call these through the class
     project_dead_reckoning = staticmethod(project_dead_reckoning)
     haversine_distance_nm = staticmethod(haversine_distance_nm)
@@ -89,6 +96,16 @@ class AISKinematicCorrelator(BasePipeline):
             else:
                 self._classify_dark(det)
 
+        # Ship or ice: only in a scene the screener found ice in, and only now, because a
+        # transponder under the contact settles the question before any image evidence is asked.
+        for di, det in enumerate(detections):
+            scene = scenes.get(det["scene_id"])
+            if scene is None or not self.arctic.applies(scene) or det["classification"] == "KNOWN_STRUCTURE":
+                continue
+            ice_pct = float(scene["quality_metrics"].get("ice_cover_pct") or 0.0)
+            if self.arctic.decide(det, ice_pct, ais_matched=di in det_match) == "ICEBERG":
+                self._classify_iceberg(det, self.config.arctic.iceberg_priority)
+
         detections.sort(key=lambda d: (-d["downlink_priority"], d["detection_id"]))
 
         context["classified_targets"] = detections
@@ -106,8 +123,11 @@ class AISKinematicCorrelator(BasePipeline):
         for key, label in (("dark_vessels_count", "DARK_VESSEL"),
                            ("spoofing_anomalies_count", "AIS_KINEMATIC_MISMATCH"),
                            ("confirmed_known_count", "CONFIRMED_KNOWN_VESSEL"),
-                           ("known_structures_count", "KNOWN_STRUCTURE")):
+                           ("known_structures_count", "KNOWN_STRUCTURE"),
+                           ("icebergs_count", "ICEBERG")):
             context[key] = sum(1 for t in detections if t["classification"] == label)
+        context["arctic_uncertain_count"] = sum(
+            1 for t in detections if t.get("arctic_classification") == "UNCERTAIN")
         return context
 
     def _fix_age_hours(self, ship: Dict[str, Any], shutter: Optional[datetime]) -> float:
@@ -192,6 +212,24 @@ class AISKinematicCorrelator(BasePipeline):
         det.update(matched_vessel=None, matched_vessel_name=structure.get("name"), ais_distance_nm=None,
                    classification="KNOWN_STRUCTURE", downlink_priority=0.05, ais_status="CHARTED",
                    intelligence_notes=f"Charted fixed structure: {structure.get('name', 'unnamed')}.")
+
+    @staticmethod
+    def _classify_iceberg(det: Dict[str, Any], priority: float) -> None:
+        """Demoted, never deleted: a small stationary hull in a growler field reads the same at this
+        resolution, so the contact keeps its position, evidence and reason in the bundle. What it
+        gives up is its JPEG chip (priority falls under downlink.chip_min_priority), which is where
+        the bytes go: 14.3 -> 8.7 KB on the Svalbard pass. The ground can ask for the chip."""
+        ev = det.get("arctic_evidence") or {}
+        slope = ev.get("nir_vis_slope")
+        det.update(
+            classification="ICEBERG", downlink_priority=priority, ais_status="NO_AIS",
+            intelligence_notes=(
+                f"Probable ice, not a vessel: {ev.get('neighbours', 0)} other bright objects within the chip "
+                f"({ev.get('neighbours_per_km2', 0.0):.0f} per km2) in a scene with {ev.get('scene_ice_pct', 0.0):.1f} % "
+                f"ice, and no wake, lead or AIS."
+                + (f" NIR/visible slope {slope:.2f} (glacier ice ~0.5, hulls ~0.8-1.0)." if slope is not None else "")
+            ),
+        )
 
     def _classify_dark(self, det: Dict[str, Any]) -> None:
         cfg = self.config.ais_correlation

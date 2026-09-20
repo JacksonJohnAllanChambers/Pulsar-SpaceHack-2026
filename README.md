@@ -149,6 +149,42 @@ That is an information limit of a VNIR payload rather than a defect in the detec
 strongest argument in this repo for putting a non-optical sensor on the same bus (see
 `docs/GALAXIA_ALIGNMENT.md` section 6: 115 Arctic contacts, zero RF emitters, 100 % rejected).
 
+#### Ship or ice? (`--arctic`, opt-in)
+
+Kongsfjorden is not the problem the sea-ice module below solves. It is not pack ice: it is calved
+glacier ice -- bergy bits and growlers -- floating in open, dark water, so the water around each
+piece really is water and the per-candidate ice regime fires on **0 of 49** Svalbard contacts. Megan
+Neville framed it correctly as *iceberg vs boat* and built a three-way call -- SHIP / ICEBERG /
+UNCERTAIN -- that demotes ice in the downlink queue instead of deleting it
+(`applet/pipelines/arctic_classifier.py`, explainer at `/arctic-explainer`). We kept that design and
+replaced the evidence, because measured on real contacts (`python scripts/iceberg_study.py`):
+
+| Evidence | What happened on real contacts |
+| :-- | :-- |
+| Centre brightness / flatness / texture (the first version) | said ICEBERG on **0 of 539** -- a real contact is ~12 px, so the mean of a 32x32 window is the water |
+| Object spectral slope, fill-invariant (ratio of band excess over local water) | the physics is real and has a control -- NIR/visible **0.46** for glacier ice, **0.77-1.0** for hulls, **1.12** for *temperate* clutter -- but as a gate, fitted on Alaska + US and frozen, it caught **1 of 104** Alaska ice contacts. Reported to the operator; carries no vote |
+| A wake or lead means SHIP | wrong on **21 of 21** Alaska contacts and 3 of 5 adjudicated Svalbard ones. Leads and brash streaks are linear too, so the image may *protect* a contact from the ice call but only a transponder says SHIP |
+| **Crowding, in a scene the screener found ice in** | what shipped: >= 3 other bright objects in the contact's chip, no wake, no lead, no AIS |
+
+End to end on Svalbard (`scorecard.py -i data/real/svalbard_poc --arctic --labels data/labels/svalbard_labels.json --reference data/labels/svalbard_reference_contacts.json`):
+
+| | off | `--arctic` |
+| :-- | --: | --: |
+| Contacts raised as dark vessels | 46 | **16** |
+| Demoted as ice: clutter / could-not-tell / **vessels** | -- | 21 / 9 / **0** |
+| Precision of the alerts that remain | 0.188 | **0.545** |
+| Downlink tarball | 14.3 KB | **8.7 KB** |
+| 16 US scenes + Bay of Fundy with it switched on | -- | **identical contacts, zero fields added** |
+
+Read that with its limits. The neighbour threshold was read off this same two-scene table, and all the
+Svalbard vessels are large; the 0.545 is optimistic. Crowding is only safe behind the scene-ice test
+(US max 0.7 %, Svalbard min 7.9 %) because ships at anchor crowd too -- 35 of 220 US vessels would
+trip it. And a small stationary hull inside a growler field **will** be called ice: that is the
+17-uncallable information limit above, which is why the contact keeps its position, evidence and
+reason in the bundle and gives up only its JPEG chip. An iceberg list is also not waste -- it is
+what the Canadian Ice Service and the International Ice Patrol publish -- so in ice the applet's
+"false alarms" are a second product at 0.02 priority rather than noise.
+
 ### The Arctic: sea ice is the clutter, and it breaks the detector twice
 
 Dark-vessel detection above the Arctic circle is a live operational requirement (Canada's
@@ -602,7 +638,7 @@ the container.
 Other tools:
 
 ```bash
-python -m pytest -q                                  # 150 tests: resilience, physics, sea ice, determinism, flight-image closure
+python -m pytest -q                                  # 143 tests: resilience, physics, sea ice, determinism, flight-image closure
 python scripts/evaluate.py -i data/sample_bundle     # precision / recall / heading / AIS accuracy
 python scripts/evaluate.py --no-verifier             # ...what the CNN buys
 python scripts/generate_synthetic_data.py --random 60 --seed 4242 -o data/heldout_bundle
@@ -769,13 +805,18 @@ RGB, no NIR) is a candidate second source of real hard negatives.
 
 ## Layout
 
+How it all fits together is in [`docs/OVERVIEW.md`](docs/OVERVIEW.md).
+
 ```
-applet/            flight code: config, cli, runner, core/ (validator, telemetry), pipelines/, packaging/, models/
+applet/            flight code: runner, core/ (validator, telemetry, thermal, governor), pipelines/, packaging/, models/
+ground/            FastAPI + single-page console, explainer pages, transfer viewer, fleet alerts
+src/pyFlows/       file-queue downlink workflow
 simulation/        scene renderer (ground-side)
 training/          verifier training, ONNX export, INT8 quantisation
-ground/            FastAPI + single-page console
-scripts/           setup_data (start here), bundle generator, Sentinel-2 / NOAA fetchers, evaluate, benchmark
-tests/             150 tests
-docker/            Dockerfile.arm64
-docs/              SETUP (collaborators start here), hackathon rules, rubric, track notes, pitch template
+scripts/           setup_data (start here), fetchers, scorecard, benchmark, soak, and the study behind each claim
+data/labels/       the team's hand verdicts on 571 US + 51 Svalbard contacts
+review/            the contact sheets they were made on
+tests/             143 tests
+docker/            Dockerfile.arm64 + pinned constraints
+docs/              OVERVIEW (how it works), SETUP (datasets), RUBRIC_SPEC_SHEET, PITCH_AND_DEMO, GALAXIA_ALIGNMENT, LABELLING
 ```

@@ -30,6 +30,8 @@ def parse_args():
         help="Pipeline track configuration (default: tactical / Track 1)",
     )
     run_parser.add_argument("--no-verifier", action="store_true", help="Physics-only mode (skip the CNN stage)")
+    run_parser.add_argument("--arctic", action="store_true",
+                            help="In icy scenes, call contacts SHIP / ICEBERG / UNCERTAIN and demote probable ice")
 
     return parser.parse_args()
 
@@ -53,6 +55,8 @@ def main():
     config = AppletConfig.load_from_yaml(args.config)
     if args.no_verifier:
         config.verifier.enabled = False
+    if args.arctic:
+        config.arctic.enabled = True
     print(f"[INFO] Mission: {config.mission.mission_name} | Track: {args.track.upper()}")
     print(f"[INFO] Input bundle: {args.input}")
 

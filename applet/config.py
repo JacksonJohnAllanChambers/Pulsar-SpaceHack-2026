@@ -105,6 +105,15 @@ class VerifierConfig(BaseModel):
     intra_op_threads: int = 4
 
 
+class ArcticConfig(BaseModel):
+    enabled: bool = False  # opt in: it renames and demotes contacts, so it is never on by surprise
+    min_scene_ice_pct: float = 2.0  # screener ice cover below which the call is not made (US max 0.7, Svalbard min 7.9)
+    min_neighbours: int = 3  # other bright objects sharing the contact's chip ...
+    min_neighbours_per_km2: float = 7.0  # ... and the same count as a density, so a finer GSD cannot fire on one
+    blob_sigma: float = 4.0  # robust sigmas over the chip's own border for a pixel to count as bright
+    iceberg_priority: float = 0.02  # under a charted structure (0.05): still downlinked, last in the queue
+
+
 class AISCorrelationConfig(BaseModel):
     spatial_gating_radius_nm: float = 1.0  # outer gate: beyond this a broadcaster is unrelated
     tight_gate_nm: float = 0.15  # inner gate at zero fix age (geolocation + AIS GPS error)
@@ -197,6 +206,7 @@ class AppletConfig(BaseModel):
     screening: ScreeningConfig = Field(default_factory=ScreeningConfig)
     detection: DetectionConfig = Field(default_factory=DetectionConfig)
     verifier: VerifierConfig = Field(default_factory=VerifierConfig)
+    arctic: ArcticConfig = Field(default_factory=ArcticConfig)
     ais_correlation: AISCorrelationConfig = Field(default_factory=AISCorrelationConfig)
     downlink: DownlinkConfig = Field(default_factory=DownlinkConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)

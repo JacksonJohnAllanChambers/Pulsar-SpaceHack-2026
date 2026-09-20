@@ -198,11 +198,12 @@
       <input type="range" id="cloud" min="5" max="95" step="5" value="60"><output id="cloudOut">60</output></div>
     <label class="ctl" title="Stage 3: ONNX micro-CNN on candidate chips"><input type="checkbox" id="cnn" checked> CNN verifier</label>
     <label class="ctl" title="Let the modelled die temperature choose how deep the cascade runs"><input type="checkbox" id="gov"> Thermal governor</label>
+    <label class="ctl" title="In scenes with ice: call contacts SHIP / ICEBERG / UNCERTAIN and send probable ice to the back of the queue. Never drops a contact."><input type="checkbox" id="arctic"> Ship or ice</label>
     <div class="ctl" title="Dawn-dusk sun-synchronous orbits never enter eclipse, so thermal relief never arrives">Orbit
       <select id="orbit"><option value="0.35">Mid-beta SSO (35% eclipse)</option><option value="0">Dawn-dusk SSO (no eclipse)</option></select></div>
     <div class="spacer"></div>
     <a class="btn" href="/explainer" style="text-decoration:none">How it works</a>
-    <a class="btn" href="/coverage" style="text-decoration:none">Coverage gaps</a>
+    <a class="btn" href="/arctic-explainer" style="text-decoration:none">Ship or ice?</a>
     <a class="btn primary" href="/transfer" style="text-decoration:none">Transfer viewer</a>
     <a class="btn" id="dl" href="/api/download" style="display:none;text-decoration:none">Download tarball</a>
     <button class="btn primary" id="run">Run pass</button>
@@ -234,6 +235,7 @@
       <div><i class="sw" style="background:var(--dark)"></i>Dark vessel (no AIS)</div>
       <div><i class="sw" style="background:var(--mismatch)"></i>AIS kinematic mismatch</div>
       <div><i class="sw" style="background:var(--known)"></i>Confirmed known vessel</div>
+      <div><i class="sw" style="background:#9dd9ff"></i>Probable ice (Ship or ice on)</div>
       <div><i class="sw" style="background:var(--ghost)"></i>AIS predicted position</div>
     </div>
   </main>
@@ -266,8 +268,8 @@
 
 <script>
 const $ = s => document.querySelector(s);
-const COLORS = { DARK_VESSEL: '#ff5f5f', AIS_KINEMATIC_MISMATCH: '#ffb547', CONFIRMED_KNOWN_VESSEL: '#46d6a3', KNOWN_STRUCTURE: '#8fa3b8' };
-const LABELS = { DARK_VESSEL: 'DARK', AIS_KINEMATIC_MISMATCH: 'MISMATCH', CONFIRMED_KNOWN_VESSEL: 'KNOWN', KNOWN_STRUCTURE: 'STRUCTURE' };
+const COLORS = { DARK_VESSEL: '#ff5f5f', AIS_KINEMATIC_MISMATCH: '#ffb547', CONFIRMED_KNOWN_VESSEL: '#46d6a3', KNOWN_STRUCTURE: '#8fa3b8', ICEBERG: '#9dd9ff' };
+const LABELS = { DARK_VESSEL: 'DARK', AIS_KINEMATIC_MISMATCH: 'MISMATCH', CONFIRMED_KNOWN_VESSEL: 'KNOWN', KNOWN_STRUCTURE: 'STRUCTURE', ICEBERG: 'ICE' };
 const STAGE_COLORS = ['#4db8ff', '#46d6a3', '#ffb547', '#b78cff', '#ff8ad1', '#8fa3b8'];
 let pass = null, scene = null, selected = null, layer = 'rgb', modelCard = {};
 const view = { s: 1, ox: 0, oy: 0 };
@@ -294,7 +296,7 @@ async function runPass() {
     const r = await fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bundle: $('#bundle').value, cfar_k_sigma: +$('#k').value, min_physics_score: +$('#phys').value,
         cloud_cover_max_pct: +$('#cloud').value, verifier_enabled: $('#cnn').checked,
-        governor_enabled: $('#gov').checked, eclipse_fraction: +$('#orbit').value }) });
+        governor_enabled: $('#gov').checked, arctic_enabled: $('#arctic').checked, eclipse_fraction: +$('#orbit').value }) });
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
     const keep = scene && scene.id;
     pass = await r.json();
@@ -567,6 +569,7 @@ function renderFooter() {
       <div class="row"><span style="color:var(--dark)">Dark vessels</span><b>${counts('DARK_VESSEL')}</b></div>
       <div class="row"><span style="color:var(--mismatch)">Kinematic mismatch</span><b>${counts('AIS_KINEMATIC_MISMATCH')}</b></div>
       <div class="row"><span style="color:var(--known)">Confirmed known</span><b>${counts('CONFIRMED_KNOWN_VESSEL')}</b></div>
+      ${counts('ICEBERG') ? `<div class="row" title="Ship or ice: demoted to the back of the queue, still downlinked"><span style="color:#9dd9ff">Probable ice (demoted)</span><b>${counts('ICEBERG')}</b></div>` : ''}
       <div class="row"><span style="color:var(--ghost)">AIS missing in clear water</span><b>${pass.ais_not_observed.filter(g => g.reason === 'CLEAR_WATER_NO_TARGET').length}</b></div>
       <div class="row"><span>Scenes usable / total</span><b>${usable} / ${pass.scenes.length}</b></div></div>
     <div class="card"><h4>Edge budget (Orin NX envelope)</h4><div class="big">${fmt(t.wall_clock_time_s, 2)}<small>s wall clock</small></div>
