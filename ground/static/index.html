@@ -202,6 +202,7 @@
       <select id="orbit"><option value="0.35">Mid-beta SSO (35% eclipse)</option><option value="0">Dawn-dusk SSO (no eclipse)</option></select></div>
     <div class="spacer"></div>
     <a class="btn" href="/explainer" style="text-decoration:none">How it works</a>
+    <a class="btn" href="/arctic-explainer" style="text-decoration:none">Ship or ice?</a>
     <a class="btn" href="/coverage" style="text-decoration:none">Coverage gaps</a>
     <a class="btn primary" href="/transfer" style="text-decoration:none">Transfer viewer</a>
     <a class="btn" id="dl" href="/api/download" style="display:none;text-decoration:none">Download tarball</a>
@@ -266,8 +267,8 @@
 
 <script>
 const $ = s => document.querySelector(s);
-const COLORS = { DARK_VESSEL: '#ff5f5f', AIS_KINEMATIC_MISMATCH: '#ffb547', CONFIRMED_KNOWN_VESSEL: '#46d6a3', KNOWN_STRUCTURE: '#8fa3b8' };
-const LABELS = { DARK_VESSEL: 'DARK', AIS_KINEMATIC_MISMATCH: 'MISMATCH', CONFIRMED_KNOWN_VESSEL: 'KNOWN', KNOWN_STRUCTURE: 'STRUCTURE' };
+const COLORS = { DARK_VESSEL: '#ff5f5f', AIS_KINEMATIC_MISMATCH: '#ffb547', CONFIRMED_KNOWN_VESSEL: '#46d6a3', KNOWN_STRUCTURE: '#8fa3b8', ICEBERG: '#9dd9ff' };
+const LABELS = { DARK_VESSEL: 'DARK', AIS_KINEMATIC_MISMATCH: 'MISMATCH', CONFIRMED_KNOWN_VESSEL: 'KNOWN', KNOWN_STRUCTURE: 'STRUCTURE', ICEBERG: 'ICE' };
 const STAGE_COLORS = ['#4db8ff', '#46d6a3', '#ffb547', '#b78cff', '#ff8ad1', '#8fa3b8'];
 let pass = null, scene = null, selected = null, layer = 'rgb', modelCard = {};
 const view = { s: 1, ox: 0, oy: 0 };

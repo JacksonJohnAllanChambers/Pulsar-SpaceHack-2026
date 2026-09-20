@@ -59,6 +59,14 @@ verifier:
   physics_override_score: 0.95      # ... unless the physics evidence is this strong
   intra_op_threads: 4
 
+arctic:
+  enabled: false                    # opt in (or --arctic): SHIP / ICEBERG / UNCERTAIN in icy scenes; ice is demoted, never dropped
+  min_scene_ice_pct: 2.0            # screener ice cover below which the question is not asked
+  min_neighbours: 3                 # other bright objects in the contact's chip ...
+  min_neighbours_per_km2: 7.0       # ... and as a density
+  blob_sigma: 4.0
+  iceberg_priority: 0.02
+
 ais_correlation:
   spatial_gating_radius_nm: 1.0
   tight_gate_nm: 0.15

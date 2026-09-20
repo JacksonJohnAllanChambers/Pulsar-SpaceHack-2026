@@ -39,7 +39,7 @@ on the same screen as the number, and used it to drive cascade depth rather than
 | Claim | Evidence | Tag | Reproduce |
 | :-- | :-- | :-- | :-- |
 | Five-stage cascade behind one entry point | `run_pass()` — used identically by CLI, console, benchmark and every test | [M] | `applet/runner.py` |
-| Test coverage | **150 tests**: corrupt input, missing bands, physics vs rendered truth, sea-ice regime, thermal control-law regressions, byte-identical output | [M] | `python -m pytest -q` |
+| Test coverage | **162 tests**: corrupt input, missing bands, physics vs rendered truth, sea-ice regime, thermal control-law regressions, byte-identical output | [M] | `python -m pytest -q` |
 | **Determinism across architectures** | Same bundle → **same SHA-256 tarball** on x86-64 Windows, ARM64 macOS and linux/arm64 container, across different numpy / OpenCV / ONNX builds | [M] | `tests/test_pipeline.py::test_output_is_byte_identical_across_runs` |
 | Cannot crash the spacecraft | Every stage degrades rather than raises — missing band, corrupt file, absent ONNX runtime, failed model load all still produce a bundle | [M] | `tests/test_validator.py` |
 | Runs in the judges' container | Dockerfile COPY set staged and executed by a test, so flight code cannot import something the image does not ship | [M] | `tests/test_flight_image.py` |
@@ -54,6 +54,7 @@ on the same screen as the number, and used it to drive cascade depth rather than
 | **Wake ray transform** | At 4.75 m the Kelvin cusp arms rarely resolve, so we do not chase the textbook V. 360 rays from each hull find the turbulent centreline, which always resolves. **4° median heading error vs real AIS.** | [M] |
 | **Sea ice as a fourth surface class** | HyperScape100 stops at 860 nm → no SWIR → no NDSI. Ice separated from cloud *inside VNIR alone*: ice absorbs toward 865 nm, cloud scatters neutrally, so the boundary lands at NDWI +0.05 on all four Arctic scenes. Cuts Arctic false alarms **23 %** at **zero** cost to temperate recall. | [M] |
 | **Lead transform** — same ray transform, sign reversed | A vessel under way in pack ice leaves an open-water channel *darker* than the floes. Independently confirmed on Landsat thermal: fires on **21.5–25.8 %** of narrow-lead candidates vs **1.0–2.0 %** control. | [M] |
+| **Ship or ice, three-way** (`--arctic`, opt-in) | Glacier ice in a fjord floats in open water, so no background test sees it (ice regime fires on 0 of 49 Svalbard contacts). SHIP / ICEBERG / UNCERTAIN from *crowding inside an icy scene*; ice is demoted, never dropped; only a transponder may say SHIP. Svalbard: **21 of 26 clutter, 9 of 17 could-not-tell, 0 vessels demoted**; alert precision **0.188 -> 0.545**; downlink 14.3 -> 8.7 KB; 16 US scenes byte-identical with it on. Three rejected alternatives measured in `scripts/iceberg_study.py`. Threshold read off the same 2 scenes -- optimistic. | [M], n small |
 | **Thermal-aware cascade depth** | Treats the power envelope as an *input*, not a limit discovered by throttling. Looks ahead, because the bus time constant (~70 min) is the same order as the orbit (~95 min). Invariant: **degrade the evidence, never the alert.** | [Mo] for degrees, [M] for the rung costs |
 | **Cue-latency geometry** | A 15-knot vessel runs **13.9 km in 30 min** against a 19.4 km swath. At the only independently-assessed RF accuracy (ESA EDAP+ on Unseenlabs), the 95 % gate is **20.8 km — wider than the swath**. So the argument for onboard RF is not better geolocation; **co-location removes the need for geolocation.** | [M] geometry, [Mo] error model |
 | Verifier trained on its own candidates | Chips mined from the detector's own output, not a generic ship dataset. FP32→INT8: 3.1× smaller, same AUC. | [M] |
@@ -153,10 +154,12 @@ Full sourcing with dates: `docs/GALAXIA_ALIGNMENT.md`.
 
 ```bash
 python scripts/setup_data.py --synthetic     # bundles, no network
-python -m pytest -q                          # 150 tests
+python -m pytest -q                          # 162 tests
 python scripts/scorecard.py -i data/real/s2_us_bundle      # temperate benchmark
 python scripts/scorecard.py -i data/real/svalbard_poc --labels data/outputs/svalbard_review/labels.json
 python scripts/scorecard.py -i data/real/fundy_bundle      # Atlantic Canada
+python scripts/scorecard.py -i data/real/svalbard_poc --arctic --labels data/outputs/svalbard_review/labels.json   # ship or ice
+python scripts/iceberg_study.py                            # the evidence behind it, and what was rejected
 python scripts/orbit_pass_sim.py --input data/eval_bundle --repeats 5   # governor, synthetic
 python scripts/cue_geometry.py                             # cue-latency argument
 python -m ground.server                                    # live console

@@ -22,7 +22,12 @@ _PROPERTY_KEYS = (
     "confidence", "physics_score", "verifier_prob", "heading_deg", "heading_ambiguous_180",
     "estimated_speed_knots", "speed_method", "hull_length_m", "hull_width_m", "wake_length_m",
     "kelvin_arms_detected", "kelvin_half_angle_deg", "matched_vessel", "ais_distance_nm", "intelligence_notes",
+    # Ice context. A dark contact in open water and one at the head of a 2 km channel through pack
+    # ice are different alerts to the watch officer, and the difference costs ~40 bytes to send.
+    "ice_regime", "lead_length_m",
 )
+# Sent only when arctic.enabled: a pass that never asks the ship-or-ice question pays no bytes for it
+_ARCTIC_KEYS = ("arctic_classification", "arctic_evidence")
 
 
 def _dump(obj: Any) -> bytes:
@@ -66,6 +71,7 @@ class DownlinkPackager:
             "dark_vessels": context.get("dark_vessels_count", 0),
             "kinematic_mismatches": context.get("spoofing_anomalies_count", 0),
             "confirmed_known": context.get("confirmed_known_count", 0),
+            **self._arctic_summary(context),
             "chips_included": included_chips,
             "budget_kb": cfg.max_downlink_budget_kb,
         })
@@ -120,12 +126,13 @@ class DownlinkPackager:
 
     def _build_geojson(self, targets: List[Dict[str, Any]], context: Dict[str, Any]) -> Dict[str, Any]:
         features = []
+        keys = _PROPERTY_KEYS + (_ARCTIC_KEYS if self.config.arctic.enabled else ())
         for tgt in targets:
             c = tgt["world_coordinates"]
             features.append({
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [c["longitude"], c["latitude"]]},
-                "properties": {k: tgt.get(k) for k in _PROPERTY_KEYS},
+                "properties": {k: tgt.get(k) for k in keys},
             })
         # Only a resolvable broadcaster missing from clear open water is intelligence (a possible ghost
         # transponder). Ships in port or too small to resolve are merely counted in the metadata.
@@ -148,10 +155,17 @@ class DownlinkPackager:
                 "pass_id": self.config.mission.orbital_pass_id,
                 "total_targets": len(targets),
                 "dark_vessels": context.get("dark_vessels_count", 0),
+                **self._arctic_summary(context),
                 "ais_not_observed_by_reason": reason_counts,
             },
             "features": features,
         }
+
+    def _arctic_summary(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        if not self.config.arctic.enabled:
+            return {}
+        return {"arctic": {"icebergs": context.get("icebergs_count", 0),
+                           "uncertain": context.get("arctic_uncertain_count", 0)}}
 
     @staticmethod
     def _build_scene_report(context: Dict[str, Any]) -> Dict[str, Any]:

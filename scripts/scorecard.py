@@ -225,7 +225,17 @@ def score_labels(targets: List[Dict[str, Any]], labels: Dict[str, str], water_km
         else:
             unlabelled += 1
     adjudicated = vessel + notvessel
+    # Contacts the Arctic call demoted as ice. They are still in the bundle, so they still count in
+    # the precision above; this says what the demotion bought and what it cost. A "vessel" here is
+    # a real ship sent to the back of the queue -- the number that must stay at zero.
+    ice = [labels.get(d["detection_id"], "unlabelled") for d in targets if d["classification"] == "ICEBERG"]
+    demoted = {k: ice.count(k) for k in ("vessel", "not_vessel", "structure", "unsure", "unlabelled") if ice.count(k)}
+    ice_v = demoted.get("vessel", 0)
+    ice_c = demoted.get("not_vessel", 0) + demoted.get("structure", 0)
+    alerts = (vessel - ice_v) + (notvessel - ice_c)
     return {
+        "demoted_as_ice": demoted,
+        "alert_precision": round((vessel - ice_v) / alerts, 3) if ice and alerts else None,
         "adjudicated_contacts": adjudicated,
         "unlabelled_contacts": unlabelled,
         "true_vessels": vessel,
@@ -285,6 +295,10 @@ def print_report(result: Dict[str, Any]) -> None:
         print(f"    true false alarms                {lab['false_alarms']} "
               f"({lab['false_alarms_per_1000km2']} per 1000 km2)")
         print(f"    recall vs all known vessels      {lab['recall_vs_all_known_vessels']}")
+        if lab.get("demoted_as_ice"):
+            print(f"    demoted as ice                   " + ", ".join(
+                f"{k}={v}" for k, v in lab["demoted_as_ice"].items()) + "   (vessel must be 0)")
+            print(f"    precision of what is left        {lab['alert_precision']}")
     print(f"\n  {result['wall_clock_s']:.2f} s wall clock, {result['peak_memory_mb']:.0f} MB peak RAM, "
           f"verifier {result['verifier']}\n")
 
@@ -295,12 +309,15 @@ def main() -> int:
     ap.add_argument("--output", "-o", default="data/outputs/us_scorecard")
     ap.add_argument("--config", "-c", default=None)
     ap.add_argument("--no-verifier", action="store_true")
+    ap.add_argument("--arctic", action="store_true", help="enable the ship / iceberg / uncertain call")
     ap.add_argument("--labels", default=None, help="labels.json exported from the contact sheet")
     args = ap.parse_args()
 
     config = AppletConfig.load_from_yaml(args.config)
     if args.no_verifier:
         config.verifier.enabled = False
+    if args.arctic:
+        config.arctic.enabled = True
 
     os.makedirs(args.output, exist_ok=True)
     context, telemetry, _ = run_pass(args.input, args.output, config)

@@ -285,6 +285,11 @@ def explainer():
     return FileResponse(os.path.join(STATIC_DIR, "explainer.html"), headers={"Cache-Control": "no-store"})
 
 
+@app.get("/arctic-explainer")
+def arctic_explainer():
+    return FileResponse(os.path.join(STATIC_DIR, "arctic_explainer.html"), headers={"Cache-Control": "no-store"})
+
+
 @app.get("/coverage")
 def coverage():
     return FileResponse(os.path.join(STATIC_DIR, "coverage.html"), headers={"Cache-Control": "no-store"})
