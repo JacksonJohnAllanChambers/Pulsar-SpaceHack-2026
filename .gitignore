@@ -75,3 +75,6 @@ data/real
 .claude/
 data/raw/*
 !data/raw/.gitkeep
+
+# Generated cinematic media and render intermediates
+/.animation/

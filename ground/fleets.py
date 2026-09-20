@@ -107,7 +107,7 @@ def write_fleet_ping(image_path: Path, alert: Dict[str, Any], fleet_output_dir: 
 
 
 def dispatch_sent_alerts(sent_dir: Path, alert_path: Path, fleet_output_dir: Path) -> List[Dict[str, Any]]:
-    """Persist a single simulated fleet ping for each new delivered dark-vessel crop."""
+    """Persist fleet pings for new priority-queue dark-vessel crops only."""
     sent_dir, alert_path, fleet_output_dir = Path(sent_dir), Path(alert_path), Path(fleet_output_dir)
     alerts = load_alerts(alert_path)
     alerts_by_source = {alert.get("source_filename"): alert for alert in alerts}
@@ -115,6 +115,9 @@ def dispatch_sent_alerts(sent_dir: Path, alert_path: Path, fleet_output_dir: Pat
     sent_images = sorted(sent_dir.glob("*.jpg")) + sorted(sent_dir.glob("*.jpg.enc")) if sent_dir.is_dir() else []
     for image_path in sent_images:
         source_name = image_path.name.removesuffix(".enc")
+        origin_path = sent_dir / f"{source_name}.queue-origin"
+        if not origin_path.is_file() or origin_path.read_text(encoding="utf-8").strip() != "priority":
+            continue
         target = parse_alert_filename(Path(source_name))
         if target is None:
             continue

@@ -28,3 +28,4 @@ def test_downlink_queue_and_sent_files_are_encrypted(tmp_path):
     assert not queued_xml.exists()
     assert decrypt_file(sent_dir / "contact.jpg.enc") == b"jpeg"
     assert decrypt_file(sent_dir / "contact.xml.enc") == b"<contact />"
+    assert (sent_dir / "contact.jpg.queue-origin").read_text(encoding="utf-8") == "priority"

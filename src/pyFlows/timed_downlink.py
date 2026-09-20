@@ -15,6 +15,14 @@ TRANSFER_RATE_BYTES_PER_SECOND = 50 * 1024 * 1024
 PRIORITY_IMAGES_PER_LESS_PRIORITY_IMAGE = 3
 
 
+def record_queue_origin(image_path, sent_dir):
+    source_name = Path(image_path.name.removesuffix(".enc"))
+    (Path(sent_dir) / f"{source_name.name}.queue-origin").write_text(
+        image_path.parent.name,
+        encoding="utf-8",
+    )
+
+
 def downlink_image(image_path, sent_dir, rate_bytes_per_second=TRANSFER_RATE_BYTES_PER_SECOND):
     transfer_seconds = image_path.stat().st_size / rate_bytes_per_second
     time.sleep(transfer_seconds)
@@ -28,6 +36,7 @@ def downlink_image(image_path, sent_dir, rate_bytes_per_second=TRANSFER_RATE_BYT
             shutil.move(xml_path, Path(sent_dir) / xml_path.name)
     else:
         move_image_with_xml(image_path, sent_dir)
+    record_queue_origin(image_path, sent_dir)
 
 
 def next_image(source_dir):

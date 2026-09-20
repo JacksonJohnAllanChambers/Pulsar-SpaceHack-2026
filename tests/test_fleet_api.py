@@ -30,6 +30,7 @@ def test_dispatch_api_reads_sent_folder(monkeypatch, tmp_path):
     sent_dir.mkdir()
     filename = "alert-v1__S2_LONGBEACH_T001__S2_LONGBEACH__lat-33.680000__lon--118.170000__DARK_VESSEL.jpg"
     (sent_dir / filename).write_bytes(b"jpeg")
+    (sent_dir / f"{filename}.queue-origin").write_text("priority", encoding="utf-8")
     monkeypatch.setattr(server, "SENT_DIR", str(sent_dir))
     monkeypatch.setattr(server, "FLEET_ALERT_PATH", str(tmp_path / "alerts.json"))
     monkeypatch.setattr(server, "FLEET_OUTPUT_DIR", str(tmp_path / "fleet_alerts"))
