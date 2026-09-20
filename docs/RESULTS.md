@@ -616,7 +616,7 @@ Considered and **not** used: MASATI (research-use-only licence, RGB with no NIR)
 
 ```bash
 python scripts/setup_data.py --all          # every dataset, public sources, no accounts
-python -m pytest -q                         # 144 tests
+python -m pytest -q                         # 147 tests
 python scripts/scorecard.py -i data/real/s2_us_bundle --labels data/labels/us_labels.json \
     --reference data/labels/us_reference_contacts.json                      # §1
 python scripts/scorecard.py -i data/real/s2_us_l1c_bundle --labels data/labels/us_labels.json \
