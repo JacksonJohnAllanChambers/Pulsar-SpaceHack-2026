@@ -35,6 +35,8 @@ where they claim to be* — instead of the image.
 
 ## Measured results
 
+*Per-scene tables, the thermal runs, the endurance test and every negative result: [`docs/RESULTS.md`](docs/RESULTS.md).*
+
 ### 16 real scenes against real AIS the imagery never saw
 
 The primary benchmark. Sixteen Sentinel-2 L2A scenes across every US coast, each paired with the **same
@@ -467,7 +469,7 @@ enough on aarch64 — not as the flight figure. What it does establish is that n
 x86: same ONNX graph, same OpenCV calls, same answers.
 
 **Bit-exact across architectures.** The same input bundle produces a downlink tarball with the *same
-SHA-256* — `eacda3b0dd9a64…` — on x86-64 Windows (Python 3.11), native ARM64 macOS (3.9.6) and inside the
+SHA-256* — `80cc882c490f76e2…` — on x86-64 Windows (Python 3.11), native ARM64 macOS (3.9.6) and inside the
 linux/arm64 flight container (3.10.12, different numpy / OpenCV / ONNX Runtime builds), including JPEG
 encoding and INT8 inference. Every scorecard metric matches to the digit (recall 0.912, precision 0.693,
 position error 46.3 m). Reproducibility is usually claimed across runs; this holds across instruction sets,
@@ -638,7 +640,7 @@ the container.
 Other tools:
 
 ```bash
-python -m pytest -q                                  # 143 tests: resilience, physics, sea ice, determinism, flight-image closure
+python -m pytest -q                                  # 144 tests: resilience, physics, sea ice, determinism, flight-image closure
 python scripts/evaluate.py -i data/sample_bundle     # precision / recall / heading / AIS accuracy
 python scripts/evaluate.py --no-verifier             # ...what the CNN buys
 python scripts/generate_synthetic_data.py --random 60 --seed 4242 -o data/heldout_bundle
@@ -710,7 +712,7 @@ and library builds, plus a virtiofs mount for the imagery. Both are honest; the 
 ask for.
 
 **Byte-identical across all three environments.** The same bundle produces a downlink tarball with the same
-SHA-256 — `eacda3b0dd9a64…` — on x86-64 Windows (Python 3.11), native macOS arm64 (3.9.6) and inside the
+SHA-256 — `80cc882c490f76e2…` — on x86-64 Windows (Python 3.11), native macOS arm64 (3.9.6) and inside the
 linux/arm64 container (3.10.12), across different numpy, OpenCV and ONNX Runtime versions, and every scorecard
 metric matches to the digit.
 
@@ -816,7 +818,7 @@ training/          verifier training, ONNX export, INT8 quantisation
 scripts/           setup_data (start here), fetchers, scorecard, benchmark, soak, and the study behind each claim
 data/labels/       the team's hand verdicts on 571 US + 51 Svalbard contacts
 review/            the contact sheets they were made on
-tests/             143 tests
+tests/             144 tests
 docker/            Dockerfile.arm64 + pinned constraints
 docs/              OVERVIEW (how it works), SETUP (datasets), RUBRIC_SPEC_SHEET, PITCH_AND_DEMO, GALAXIA_ALIGNMENT, LABELLING
 ```

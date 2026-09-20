@@ -7,8 +7,11 @@ One page per judge. Every row is a claim, its evidence, and the command that rep
 beside it, that is a defect and we want to know.
 
 **Scale, stated once so no row has to repeat it:** Arctic recall rests on n=5 visible broadcasters and
-Bay of Fundy on n=2. They are directional, not statistical. The 16-scene US benchmark (571 contacts
-adjudicated by hand) is the only result here with real weight behind it.
+Bay of Fundy on n=2. They are directional, not statistical. The 16-scene US benchmark is the only result
+here with real weight behind it: 571 contacts were labelled by hand, and **347 of them are re-detected by
+the current model and carry the 0.697** — the rest are clutter the detector no longer raises at all.
+
+**Every number here, with its per-scene breakdown and its raw JSON: [`RESULTS.md`](RESULTS.md).**
 
 ---
 
@@ -44,11 +47,11 @@ on the same screen as the number, and used it to drive cascade depth rather than
 | Claim | Evidence | Tag | Reproduce |
 | :-- | :-- | :-- | :-- |
 | Five-stage cascade behind one entry point | `run_pass()` — used identically by CLI, console, benchmark and every test | [M] | `applet/runner.py` |
-| Test coverage | **143 tests**: corrupt input, missing bands, physics vs rendered truth, sea-ice regime, thermal control-law regressions, byte-identical output | [M] | `python -m pytest -q` |
+| Test coverage | **144 tests**: corrupt input, missing bands, physics vs rendered truth, sea-ice regime, thermal control-law regressions, byte-identical output | [M] | `python -m pytest -q` |
 | **Determinism across architectures** | Same bundle → **same SHA-256 tarball** on x86-64 Windows, ARM64 macOS and linux/arm64 container, across different numpy / OpenCV / ONNX builds | [M] | `tests/test_pipeline.py::test_output_is_byte_identical_across_runs` |
 | Cannot crash the spacecraft | Every stage degrades rather than raises — missing band, corrupt file, absent ONNX runtime, failed model load all still produce a bundle | [M] | `tests/test_validator.py` |
 | Runs in the judges' container | Dockerfile COPY set staged and executed by a test, so flight code cannot import something the image does not ship | [M] | `tests/test_flight_image.py` |
-| Real-data benchmark | 16 US Sentinel-2 scenes vs same-day NOAA AIS, **571 contacts hand-adjudicated** | [M] | `scripts/scorecard.py -i data/real/s2_us_bundle --labels data/labels/us_labels.json --reference ...` |
+| Real-data benchmark | 16 US Sentinel-2 scenes vs same-day NOAA AIS, 571 contacts labelled by hand, **347 backing the figure** | [M] | `scripts/scorecard.py -i data/real/s2_us_bundle --labels data/labels/us_labels.json --reference ...` |
 
 ---
 
@@ -179,7 +182,7 @@ Considered and **not** used: MASATI (research-use-only licence, RGB with no NIR)
 
 ```bash
 python scripts/setup_data.py --synthetic     # bundles, no network
-python -m pytest -q                          # 143 tests
+python -m pytest -q                          # 144 tests
 python scripts/scorecard.py -i data/real/s2_us_bundle --labels data/labels/us_labels.json --reference data/labels/us_reference_contacts.json   # temperate benchmark
 python scripts/scorecard.py -i data/real/svalbard_poc --labels data/labels/svalbard_labels.json --reference data/labels/svalbard_reference_contacts.json
 python scripts/scorecard.py -i data/real/fundy_bundle      # Atlantic Canada

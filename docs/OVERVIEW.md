@@ -1,7 +1,8 @@
 # Tactical Edge Sentinel -- how it works
 
-Pulsar SpaceHack 2026, Track 1 (free-for-all). This is the explanation; the results are in
-[`README.md`](../README.md) and the judge-facing summary is [`RUBRIC_SPEC_SHEET.md`](RUBRIC_SPEC_SHEET.md).
+Pulsar SpaceHack 2026, Track 1 (free-for-all). This is the explanation. Every measured number lives in
+[`RESULTS.md`](RESULTS.md), the judge-facing summary is [`RUBRIC_SPEC_SHEET.md`](RUBRIC_SPEC_SHEET.md),
+and the narrative is in [`README.md`](../README.md).
 
 ## The idea in one paragraph
 
