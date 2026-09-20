@@ -1,0 +1,7 @@
+# The image COPYs only what it names; this keeps the ~1.5 GB of datasets out of the build context
+.git
+data
+review
+**/__pycache__
+.pytest_cache
+.claude

@@ -1,0 +1,5 @@
+# Only for retraining the chip verifier (training/train_verifier.py). CPU-only PyTorch is enough.
+-r requirements-dev.txt
+torch>=2.2.0
+onnx>=1.15.0
+onnxscript>=0.1.0

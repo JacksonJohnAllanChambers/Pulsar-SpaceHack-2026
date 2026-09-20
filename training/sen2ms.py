@@ -232,11 +232,110 @@ def evaluate(args):
         json.dump(results, f, indent=2)
 
 
+def _iso(date: str, seconds: float) -> str:
+    """CSV dates come as 25/03/2022 (DEN) or 2022-03-11 (USA); times as seconds of day."""
+    if "/" in date:
+        d, m, y = date.split("/")
+    else:
+        y, m, d = date.split("-")
+    sec = int(seconds)
+    return f"{int(y):04d}-{int(m):02d}-{int(d):02d}T{sec // 3600:02d}:{sec // 60 % 60:02d}:{sec % 60:02d}Z"
+
+
+def bundle(args):
+    """
+    Real imagery + real AIS as an ordinary applet bundle (held-out products only).
+
+    Each single-vessel chip becomes a scene; its AIS record goes into ais_catalog.json with the real
+    fix time, and the scene's shutter time is the real acquisition time, so the correlator has to
+    dead-reckon across the true gap. The published chips carry no geotransform, so each chip is
+    geolocated by pinning the labelled box to the dead-reckoned AIS position: the *position* match
+    is therefore true by construction and proves nothing. What is genuinely tested is kinematics
+    (wake heading vs broadcast heading on honest ships -> false-accusation rate) and, by withholding
+    every third AIS record, that a real ship with no broadcast comes out DARK.
+    """
+    import tifffile
+    from applet.utils.geo import project_dead_reckoning, METERS_PER_DEG_LAT
+
+    out_dir = os.path.join(os.path.dirname(args.zip), "ais_bundle")
+    os.makedirs(out_dir, exist_ok=True)
+    for f in os.listdir(out_dir):
+        os.remove(os.path.join(out_dir, f))
+    scenes, vessels = [], []
+    with zipfile.ZipFile(args.zip) as z:
+        for s in iter_samples(z):
+            if not (s["vessel"] and is_test_scene(s["product"]) and len(s["boxes"]) == 1 and len(s["ais"]) == 1):
+                continue
+            a = s["ais"][0]
+            lat, lon, sog, hdg = (_float(a.get(k)) for k in ("LAT", "LON", "SOG", "Heading"))
+            t_fix, t_pic = _float(a.get("Time(s)")), _float(a.get("Pic Time(s)"))
+            if None in (lat, lon, sog, hdg, t_fix, t_pic) or hdg > 360:
+                continue
+            ship_lat, ship_lon = project_dead_reckoning(lat, lon, sog, hdg, (t_pic - t_fix) / 3600.0)
+            b = s["boxes"][0]
+            h, w = s["refl"].shape[:2]
+            dx_m = ((b[0] + b[2]) / 2 - (w - 1) / 2) * GSD
+            dy_m = ((b[1] + b[3]) / 2 - (h - 1) / 2) * GSD
+            c_lat = ship_lat + dy_m / METERS_PER_DEG_LAT
+            c_lon = ship_lon - dx_m / (METERS_PER_DEG_LAT * math.cos(math.radians(ship_lat)))
+            withheld = zlib.crc32(str(a.get("MMSI")).encode()) % 3 == 0  # per ship, so it is silent everywhere
+            date = a.get("Date", "2022-01-01")
+            fname = f"{s['name'].lower()}.tif"
+            tifffile.imwrite(os.path.join(out_dir, fname), np.clip(s["refl"] * 10000 + 0.5, 1, 65535).astype(np.uint16),
+                             photometric="minisblack", compression="zlib", planarconfig="contig")
+            scenes.append({
+                "id": s["name"], "file": fname, "center_lat": round(c_lat, 7), "center_lon": round(c_lon, 7),
+                "shutter_time": _iso(date, t_pic),
+                "description": f"{a.get('Location', s['region'])}: {a.get('Length')} m, {sog} kn, hdg {hdg:.0f}"
+                               f"{' -- AIS WITHHELD' if withheld else ''}",
+                "real_truth": {"mmsi": a.get("MMSI"), "box": [round(v, 1) for v in b], "sog": sog, "heading": hdg,
+                               "ais_withheld": withheld},
+            })
+            if not withheld:
+                vessels.append({"mmsi": a.get("MMSI"), "name": f"MMSI {a.get('MMSI')}", "timestamp": _iso(date, t_fix),
+                                "latitude": lat, "longitude": lon, "sog_knots": sog, "cog_deg": hdg})
+    with open(os.path.join(out_dir, "manifest.json"), "w", encoding="utf-8") as f:
+        json.dump({"bundle_version": "2.0", "satellite": "Sentinel-2 (SEN2MS chips)", "gsd_meters": GSD,
+                   "reflectance_scale": 10000, "bands": ["red", "green", "blue", "nir"],
+                   "attribution": "SEN2MS Vessel BBoxes, Zenodo 15571607, CC-BY-4.0; contains modified Copernicus data",
+                   "scenes": scenes}, f, indent=1)
+    with open(os.path.join(out_dir, "ais_catalog.json"), "w", encoding="utf-8") as f:
+        json.dump({"vessels": vessels}, f, indent=1)
+    print(f"[DONE] {len(scenes)} scenes, {len(vessels)} AIS records ({len(scenes) - len(vessels)} withheld) -> {out_dir}")
+
+    # ---- score the AIS stage on it
+    import tempfile
+    from applet.runner import run_pass
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx, _, _ = run_pass(out_dir, tmp, AppletConfig.load_from_yaml(os.path.join(ROOT, "config.example.yaml")))
+    by_scene = {}
+    for t in ctx["classified_targets"]:
+        by_scene.setdefault(t["scene_id"], []).append(t)
+    tally = {"honest": {}, "withheld": {}}
+    moving = {"honest_underway_mismatch": 0, "honest_underway": 0}
+    for sc in scenes:
+        rt = sc["real_truth"]
+        hit = next((t for t in by_scene.get(sc["id"], []) if in_box(t["apex_px"][0], t["apex_px"][1], rt["box"])), None)
+        label = hit["classification"] if hit else "NOT_DETECTED"
+        group = tally["withheld" if rt["ais_withheld"] else "honest"]
+        group[label] = group.get(label, 0) + 1
+        if hit and not rt["ais_withheld"] and rt["sog"] >= 3:
+            moving["honest_underway"] += 1
+            moving["honest_underway_mismatch"] += int(label == "AIS_KINEMATIC_MISMATCH")
+    extra = sum(len(v) for v in by_scene.values()) - sum(
+        1 for sc in scenes if any(in_box(t["apex_px"][0], t["apex_px"][1], sc["real_truth"]["box"]) for t in by_scene.get(sc["id"], [])))
+    report = {"ships_broadcasting_honestly": tally["honest"], "ships_with_ais_withheld": tally["withheld"],
+              **moving, "other_contacts_in_these_chips_all_reported_dark": extra}
+    print(json.dumps(report, indent=2))
+    with open(os.path.join(os.path.dirname(args.zip), "ais_scorecard.json"), "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2)
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("command", choices=["mine", "evaluate"])
+    ap.add_argument("command", choices=["mine", "evaluate", "bundle"])
     ap.add_argument("--zip", default=ZIP_PATH)
     ap.add_argument("--model", default=None, help="evaluate: verifier ONNX to use instead of the configured one")
     ap.add_argument("--tag", default="")
     a = ap.parse_args()
-    {"mine": mine, "evaluate": evaluate}[a.command](a)
+    {"mine": mine, "evaluate": evaluate, "bundle": bundle}[a.command](a)

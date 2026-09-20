@@ -111,3 +111,20 @@ def test_zero_reflectance_deep_water_is_not_land():
     assert scene["land_mask"].mean() < 0.01 and scene["quality_metrics"]["water_pct"] > 95
     dets, _ = VesselDetector(cfg).detect_scene(scene)
     assert len(dets) == 1 and abs(dets[0]["apex_px"][0] - 200) < 12
+
+
+def test_aircraft_band_parallax_is_rejected():
+    """Regression from real Sentinel-2: aircraft appear as separated R / G / B dots and were reported as ships."""
+    spec = SceneSpec(400, 400, 10.0, seed=9, wind=0.2)
+    refl, _ = render_scene(spec)
+    for band, dx in ((0, -6), (1, 0), (2, 6), (3, 9)):  # each band sees the aircraft somewhere else
+        refl[199:202, 199 + dx:202 + dx, band] += 0.35
+    scene = {
+        "id": "T", "array": refl, "nodata_mask": np.zeros((400, 400), bool), "gsd_m": 10.0,
+        "status": {"missing_bands": [], "warnings": []},
+        "georef": SceneGeoreference({"center_lat": 44.0, "center_lon": -63.0}, 400, 400, 10.0),
+    }
+    cfg = AppletConfig()
+    scene.update(ImageQualityScreener(cfg).screen_scene(scene))
+    dets, _ = VesselDetector(cfg).detect_scene(scene)
+    assert dets == []

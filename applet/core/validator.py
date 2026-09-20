@@ -31,6 +31,7 @@ class InputBundleValidator:
         self.valid_scenes: List[Dict[str, Any]] = []
         self.rejected_scenes: List[Dict[str, Any]] = []
         self.ais_catalog: List[Dict[str, Any]] = []
+        self.known_structures: List[Dict[str, Any]] = []
         self.total_file_bytes: int = 0
         self.total_raw_bytes: int = 0
 
@@ -48,6 +49,7 @@ class InputBundleValidator:
                 raise InvalidManifestError(f"Failed to parse manifest.json: {str(e)}")
 
         self.ais_catalog = self._load_ais_catalog()
+        self.known_structures = self._load_known_structures()
 
         image_entries = self.manifest.get("scenes") or []
         if not image_entries:
@@ -76,6 +78,18 @@ class InputBundleValidator:
             with open(self.ais_catalog_path, "r", encoding="utf-8") as f:
                 vessels = json.load(f).get("vessels", [])
             return [v for v in vessels if isinstance(v, dict) and "latitude" in v and "longitude" in v]
+        except Exception:
+            return []
+
+    def _load_known_structures(self) -> List[Dict[str, Any]]:
+        """Optional known_structures.json: charted platforms / islands / buoys uplinked with the AIS picture."""
+        path = os.path.join(self.input_dir, "known_structures.json")
+        if not os.path.exists(path):
+            return []
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                items = json.load(f).get("structures", [])
+            return [s for s in items if isinstance(s, dict) and "latitude" in s and "longitude" in s]
         except Exception:
             return []
 

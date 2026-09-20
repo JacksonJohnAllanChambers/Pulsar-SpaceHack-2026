@@ -131,7 +131,10 @@ def main():
     ap.add_argument("--size", type=int, default=512)
     ap.add_argument("--epochs", type=int, default=14)
     ap.add_argument("--seed", type=int, default=2026)
-    ap.add_argument("--real-npz", default=None)
+    ap.add_argument("--real-npz", nargs="*", default=None,
+                    help="npz files of real labelled chips (arrays 'chips', 'labels'). Append *N to "
+                         "oversample one of them, e.g. adjudicated.npz*8 -- a few hundred "
+                         "hand-adjudicated chips are otherwise swamped by thousands of mined ones")
     args = ap.parse_args()
 
     import torch
@@ -144,13 +147,28 @@ def main():
     print(f"[1/4] Mining candidate chips from {args.scenes} synthetic scenes...")
     chips, labels, groups = mine_chips(args.scenes, args.size, args.seed)
     source = {"synthetic_chips": int(len(labels)), "real_chips": 0}
-    if args.real_npz:
-        real = np.load(args.real_npz)
-        rg = np.full(len(real["labels"]), -1) - np.arange(len(real["labels"])) % 5  # spread over 5 pseudo-groups
-        chips = np.concatenate([chips, real["chips"].astype(np.float32)])
-        labels = np.concatenate([labels, real["labels"].astype(np.float32)])
+    for spec in (args.real_npz or []):
+        path, _, mult = spec.partition("*")
+        repeat = int(mult) if mult else 1
+        real = np.load(path)
+        rc = real["chips"].astype(np.float32)
+        rl = real["labels"].astype(np.float32)
+        if repeat > 1:
+            rc = np.repeat(rc, repeat, axis=0)
+            rl = np.repeat(rl, repeat, axis=0)
+        rg = np.full(len(rl), -1) - np.arange(len(rl)) % 5  # spread over 5 pseudo-groups
+        chips = np.concatenate([chips, rc])
+        labels = np.concatenate([labels, rl])
         groups = np.concatenate([groups, rg])
-        source["real_chips"] = int(len(real["labels"]))
+        source["real_chips"] += int(len(rl))
+        # Two different corpora can both be called train_chips.npz; keep the parent directory
+        # so the model card says which is which.
+        tag = "/".join(os.path.normpath(path).replace("\\", "/").split("/")[-2:])
+        source.setdefault("real_sources", []).append({"file": tag,
+                                                      "chips": int(len(real["labels"])),
+                                                      "repeat": repeat})
+        print(f"      + {len(rl)} real chips from {os.path.basename(path)} "
+              f"({int(rl.sum())} pos){' x' + str(repeat) if repeat > 1 else ''}")
 
     x_all = normalise_chips(chips)
     val_mask = (groups % 5) == 0  # split by scene, never by chip

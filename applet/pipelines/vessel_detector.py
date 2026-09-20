@@ -23,11 +23,20 @@ import numpy as np
 from typing import Dict, Any, List, Optional, Tuple
 
 from applet.core.base import BasePipeline
+from applet.core.governor import active_profile, capped_scene_workers
 from applet.pipelines.quality_screener import meters_to_px, area_to_px, disk, map_scenes
 from applet.utils.geo import speed_from_kelvin_wavelength
 
 _N_ANGLES = 360
 _SPEED_RAY_OFFSET_DEG = 8
+
+# What every consumer of a wake result sees when there is no wake to report -- whether
+# because the ray transform found nothing or because the governor did not run it.
+# Downstream code already handles found=False, so shedding the stage needs no new branch.
+_NO_WAKE: Dict[str, Any] = {
+    "found": False, "bearing_deg": 0.0, "length_px": 0.0, "snr": 0.0,
+    "kelvin_found": False, "kelvin_half_angle_deg": None, "speed_knots": None,
+}
 
 
 class _RayTable:
@@ -51,9 +60,16 @@ class _RayTable:
 
 
 class VesselDetector(BasePipeline):
+    # Set from the pipeline context in process(). None means the governor is not
+    # governing and the config alone decides -- see applet.core.governor.active_profile.
+    profile = None
+
     def process(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        self.profile = active_profile(context)
         all_detections: List[Dict[str, Any]] = []
         funnel = {"pixels_screened": 0, "cfar_pixels": 0, "candidates": 0, "physics_accepted": 0}
+        if context.get("unknown_memory") is not None:
+            funnel["suppressed_persistent"] = 0
 
         scenes = context.get("screened_scenes", [])
         usable = [s for s in scenes if s["quality_metrics"]["is_usable"]]
@@ -66,15 +82,33 @@ class VesselDetector(BasePipeline):
             except Exception as e:
                 scene["quality_metrics"].setdefault("warnings", []).append(f"DETECTOR_FAULT ({type(e).__name__})")
                 return None
+            memory = context.get("unknown_memory")
+            if memory is not None:
+                found = len(detections)
+                detections = [
+                    detection for detection in detections
+                    if not memory.is_suppressed(
+                        detection["world_coordinates"]["latitude"], detection["world_coordinates"]["longitude"],
+                        context.get("ais_protected_locations", {}).get(scene["id"], []),
+                    )
+                ]
+                # Never silent: what the memory hid is counted in the funnel the operator sees
+                stats["suppressed_persistent"] = found - len(detections)
+            include_chips = self.profile is None or self.profile.include_chips
             for det in detections:
                 chip = self.crop_chip(scene["array"], det["apex_px"], self.config.detection.chip_crop_size_px)
+                # The tensor feeds the verifier CNN and is always needed; only the JPEG is
+                # downlink payload, so only the JPEG is optional.
                 det["chip_tensor"] = chip
-                det["chip_jpeg"] = self.encode_chip_jpeg(chip, self.config.downlink.chip_jpeg_quality)
+                det["chip_jpeg"] = (
+                    self.encode_chip_jpeg(chip, self.config.downlink.chip_jpeg_quality)
+                    if include_chips else None
+                )
             return detections, stats
 
         # Scenes are independent and OpenCV/NumPy release the GIL, so they fan out across the
         # Orin's cores. Results are gathered in scene order: output does not depend on timing.
-        for scene, result in zip(usable, map_scenes(work, usable, self.config.runtime.scene_workers)):
+        for scene, result in zip(usable, map_scenes(work, usable, capped_scene_workers(context, self.config.runtime.scene_workers))):
             if result is None:
                 continue
             detections, stats = result
@@ -195,7 +229,12 @@ class VesselDetector(BasePipeline):
         keep = sorted(keep.tolist(), key=lambda i: (-int(cc_stats[i, cv2.CC_STAT_AREA]),
                                                     int(cc_stats[i, cv2.CC_STAT_TOP]),
                                                     int(cc_stats[i, cv2.CC_STAT_LEFT])))
-        keep = keep[: cfg.max_candidates_per_scene]
+        max_candidates = cfg.max_candidates_per_scene
+        if self.profile is not None:
+            # min(), never max(): a profile is a budget ceiling, not a licence to do
+            # more work than the uplinked config authorised.
+            max_candidates = min(max_candidates, self.profile.max_candidates_per_scene)
+        keep = keep[:max_candidates]
 
         # Shoreline keep-out. On real imagery the residual false alarms are surf, shoals, piers and
         # breakwaters hugging the land mask; a blob that reaches into this strip is "in port", not a
@@ -212,6 +251,12 @@ class VesselDetector(BasePipeline):
         cloud_near = None
         if scene["cloud_mask"].any():
             cloud_near = cv2.dilate(scene["cloud_mask"], disk(meters_to_px(60.0, gsd, minimum=3)))
+
+        # Ice regime. One integral image gives every candidate's surrounding ice fraction in
+        # O(1), so knowing we are in pack ice costs one cv2.integral per scene, not a crop per blob.
+        ice_mask = scene.get("ice_mask")
+        scene["_ice_integral"] = (cv2.integral(np.ascontiguousarray(ice_mask, dtype=np.uint8))
+                                  if ice_mask is not None and ice_mask.any() else None)
 
         # Object-level CFAR. In a whitecap field the candidates themselves are the clutter
         # population: a blob must then be an outlier in integrated contrast (ships are bigger
@@ -246,6 +291,8 @@ class VesselDetector(BasePipeline):
 
         detections: List[Dict[str, Any]] = []
         for det in analysed:
+            if det["target_type"] == "AIRBORNE_OR_FAST_MOVER":
+                continue
             if det["physics_score"] < cfg.min_physics_score:
                 continue
             strong_wake = det["target_type"] == "VESSEL_UNDERWAY" and det["wake_snr"] >= 8.0 \
@@ -254,6 +301,19 @@ class VesselDetector(BasePipeline):
             ship_shaped = det["hull_resolved"] and det["hull_length_m"] >= 30.0 \
                 and det["hull_length_m"] >= 2.5 * det["hull_width_m"]
             if rough_sea and det["integrated_contrast"] < clutter_gate and not (strong_wake or ship_shaped):
+                continue
+            # In pack ice "bright blob on dark water" stops being evidence, because that is
+            # what a floe is. The candidate must then show something ice cannot: the open-water
+            # channel it broke astern, a real wake, or a resolved slender hull. Contrast alone no
+            # longer counts -- which is also why the CNN's physics override is withdrawn here: a
+            # floe with a crisp edge scores physics 1.00 and rides over a correct 0.04 rejection.
+            # Being ship-shaped is deliberately NOT enough: floes are angular and routinely run
+            # 2.5:1 or slimmer, so elongation that means "hull" in open water means nothing here.
+            # Nor is a bright wake: a chain of floes lying along one bearing reads as a wake at
+            # snr >= 8 and carried 127 of 173 Prudhoe candidates straight through this gate. In
+            # ice the surviving evidence is the DARK channel, or Kelvin arms, which a drifting
+            # floe cannot fake. The cost is a vessel stopped dead in the pack: no lead, no wake.
+            if det["ice_regime"] and not (det["lead_found"] or det["kelvin_arms_detected"]):
                 continue
             detections.append(det)
 
@@ -418,6 +478,12 @@ class VesselDetector(BasePipeline):
             bearing = math.degrees(math.atan2(far_end[0] - cx, -(far_end[1] - cy))) % 360.0
             wake = {"found": True, "bearing_deg": bearing, "length_px": float(blob_len), "snr": 0.0,
                     "kelvin_found": False, "kelvin_half_angle_deg": None, "speed_knots": None}
+        elif self.profile is not None and not self.profile.wake_transform:
+            # Governor shed this stage. It is the most expensive per-candidate work in the
+            # pass, and dropping it costs heading, speed and the wake term of the physics
+            # score -- the candidate is still detected and still reported, with a hull-axis
+            # heading flagged ambiguous. Degrade the evidence, never the alert.
+            wake = dict(_NO_WAKE)
         else:
             # Hull footprint (+2 px of optical bleed) is blanked so the ship cannot be its own wake
             pad = 3
@@ -439,7 +505,36 @@ class VesselDetector(BasePipeline):
         hull_len_m, hull_wid_m = hull_len * gsd, hull_wid * gsd
         physics = self._physics_score(peak_z, hull_len_m, hull_wid_m, wake, occluded)
 
-        if occluded:
+        # How much of what surrounds this candidate is ice? A floe is indistinguishable from a
+        # small vessel by its own few pixels at this resolution -- what tells you is the water it
+        # sits in. One integral-image lookup, no crop.
+        ice_frac = 0.0
+        integral = scene.get("_ice_integral")
+        if integral is not None:
+            rad = meters_to_px(cfg.ice_background_radius_m, gsd, minimum=8)
+            ih, iw = scene["array"].shape[:2]
+            ax0, ax1 = int(np.clip(cx - rad, 0, iw - 1)), int(np.clip(cx + rad, 0, iw - 1))
+            ay0, ay1 = int(np.clip(cy - rad, 0, ih - 1)), int(np.clip(cy + rad, 0, ih - 1))
+            box = max((ax1 - ax0) * (ay1 - ay0), 1)
+            n_ice = (integral[ay1, ax1] - integral[ay0, ax1]
+                     - integral[ay1, ax0] + integral[ay0, ax0])
+            ice_frac = float(n_ice) / box
+        ice_regime = ice_frac >= cfg.ice_background_fraction
+        lead = self._lead_transform(z_smooth, cx, cy, gsd) if ice_regime else {
+            "found": False, "bearing_deg": 0.0, "length_px": 0.0, "snr": 0.0}
+
+        # Band-parallax test. A pushbroom imager records its bands a fraction of a second apart, so
+        # anything much faster than a ship (aircraft, mostly) lands in a different place in each band
+        # and shows up as separated red / green / blue dots. A 30-knot vessel moves ~1 px in that time.
+        parallax_px = (self._band_parallax(scene["array"], cx, cy)
+                       if ice_regime or (hull_len <= 8.0 and not wake["found"]) else 0.0)
+        airborne = parallax_px >= cfg.parallax_reject_px and hull_len <= 8.0 and not wake["found"]
+        if airborne:
+            physics = min(physics, 0.2)
+
+        if airborne:
+            target_type = "AIRBORNE_OR_FAST_MOVER"
+        elif occluded:
             target_type = "WAKE_ONLY_CLOUD_OCCLUDED"
         elif wake["found"]:
             target_type = "VESSEL_UNDERWAY"
@@ -474,6 +569,13 @@ class VesselDetector(BasePipeline):
             "kelvin_half_angle_deg": wake["kelvin_half_angle_deg"],
             "estimated_speed_knots": wake["speed_knots"],
             "speed_method": "KELVIN_TRANSVERSE_WAVELENGTH" if wake["speed_knots"] is not None else None,
+            "band_parallax_px": round(parallax_px, 2),
+            "ice_background_fraction": round(ice_frac, 3),
+            "ice_regime": bool(ice_regime),
+            "lead_found": bool(lead["found"]),
+            "lead_length_m": round(lead["length_px"] * gsd, 1),
+            "lead_snr": round(lead["snr"], 2),
+            "lead_bearing_deg": round(lead["bearing_deg"], 1) if lead["found"] else None,
             "peak_z": round(peak_z, 2),
             "integrated_contrast": round(integrated, 4),
             "physics_score": round(physics, 3),
@@ -481,6 +583,29 @@ class VesselDetector(BasePipeline):
             "confidence": round(physics, 3),
             "ais_status": "PENDING_CORRELATION",
         }
+
+    @staticmethod
+    def _band_parallax(reflectance: np.ndarray, cx: float, cy: float, half: int = 10) -> float:
+        """Largest distance (px) between the per-band bright centroids around a compact target."""
+        h, w = reflectance.shape[:2]
+        x0, x1 = max(int(cx) - half, 0), min(int(cx) + half + 1, w)
+        y0, y1 = max(int(cy) - half, 0), min(int(cy) + half + 1, h)
+        win = reflectance[y0:y1, x0:x1]
+        if win.shape[0] < 5 or win.shape[1] < 5:
+            return 0.0
+        yy, xx = np.mgrid[0:win.shape[0], 0:win.shape[1]]
+        centroids = []
+        for b in range(win.shape[2]):
+            band = win[:, :, b]
+            excess = band - np.median(band)
+            peak = float(excess.max())
+            if peak < 0.02:
+                continue
+            wgt = np.clip(excess - 0.5 * peak, 0.0, None)  # only the bright core of this band
+            centroids.append((float((xx * wgt).sum() / wgt.sum()), float((yy * wgt).sum() / wgt.sum())))
+        if len(centroids) < 3:
+            return 0.0
+        return max(math.hypot(a[0] - b[0], a[1] - b[1]) for i, a in enumerate(centroids) for b in centroids[i + 1:])
 
     @staticmethod
     def _principal_axes(xs: np.ndarray, ys: np.ndarray, weights: np.ndarray) -> Tuple[float, float, float]:
@@ -589,6 +714,68 @@ class VesselDetector(BasePipeline):
             contrast, table, ix, iy, best, best_start, best_len, gsd
         )
         return result
+
+    def _lead_transform(
+        self, z_smooth: np.ndarray, cx: float, cy: float, gsd: float,
+    ) -> Dict[str, Any]:
+        """
+        The open-water channel astern: the wake ray transform run with the sign reversed.
+
+        A vessel working through pack ice leaves a lead -- a strip of open water where the floes
+        used to be. At 865 nm that water sits near 1 % reflectance against 20-30 % for the ice it
+        displaced, so the channel is a far stronger signal than the wake the same ship would raise
+        in open sea, and it is the one thing in a floe field that a floe cannot make for itself.
+        Geometrically it is the wake problem upside down: instead of a contiguous run of excess
+        contrast leaving the hull on one bearing, a contiguous run of deficit contrast.
+
+        Only called for candidates already sitting in ice, so the cost is bounded by how much ice
+        is in the scene rather than by how many candidates it has.
+        """
+        cfg = self.config.detection
+        h, w = z_smooth.shape
+        radius = meters_to_px(cfg.wake_search_radius_m, gsd, minimum=16)
+        table = _RayTable.get(radius)
+        out: Dict[str, Any] = {"found": False, "bearing_deg": 0.0, "length_px": 0.0, "snr": 0.0}
+
+        ix, iy = int(round(cx)), int(round(cy))
+        xs, ys = table.dx + ix, table.dy + iy
+        inb = (xs >= 0) & (xs < w) & (ys >= 0) & (ys < h)
+        prof = np.where(inb, -z_smooth[np.clip(ys, 0, h - 1), np.clip(xs, 0, w - 1)], 0.0)
+
+        # Start clear of the hull and its own dark shadow side, then use the same occupancy walk
+        # as the wake: a lead is continuous from the stern, and one gap between two floes must not
+        # be able to carry a ray across a whole ice field.
+        skip = max(2, meters_to_px(40.0, gsd, minimum=2))
+        n_r = prof.shape[1]
+        if skip >= n_r - 2:
+            return out
+        prof[:, :skip] = 0.0
+        win = 9
+        csum = np.cumsum(np.pad(prof, ((0, 0), (1, 0))), axis=1)
+        occ = np.cumsum(np.pad((prof > 0.8).astype(np.float64), ((0, 0), (1, 0))), axis=1)
+        idx = np.arange(n_r)
+        hi = np.minimum(idx + win, n_r)
+        running = (occ[:, hi] - occ[:, idx]) / (hi - idx)
+        dead = (running < 0.5) & (idx[None, :] >= skip)
+        end = np.where(dead.any(axis=1), dead.argmax(axis=1), n_r)
+        rows = np.arange(_N_ANGLES)
+        score = csum[rows, end] - csum[rows, skip]
+
+        best = int(np.argmax(score))
+        best_len = int(end[best]) - skip
+        if best_len < 2:
+            return out
+        # Loose pack is open water in every direction, so a lead only counts when ONE bearing
+        # stands out against the rest -- the same outlier test the wake uses.
+        sep = np.minimum((rows - best) % 360, (best - rows) % 360)
+        others = score[sep > 30]
+        med = float(np.median(others))
+        mad = float(np.median(np.abs(others - med)))
+        snr = (float(score[best]) - med) / max(1.4826 * mad, 0.6 * math.sqrt(best_len))
+        out.update(bearing_deg=float(best), length_px=float(best_len), snr=snr)
+        if best_len * gsd >= cfg.lead_min_length_m and snr >= cfg.lead_min_snr:
+            out["found"] = True
+        return out
 
     @staticmethod
     def _speed_from_transverse_waves(

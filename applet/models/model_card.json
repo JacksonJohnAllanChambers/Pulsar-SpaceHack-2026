@@ -3,26 +3,59 @@
   "parameters": 47041,
   "input": "N x 4 x 64 x 64 (R,G,B,NIR), median-subtracted reflectance / 0.10",
   "training_data": {
-    "synthetic_chips": 11676,
-    "real_chips": 0
+    "synthetic_chips": 11607,
+    "real_chips": 6552,
+    "real_sources": [
+      {
+        "file": "sen2ms/train_chips.npz",
+        "chips": 3608,
+        "repeat": 1,
+        "note": "SEN2MS vessel/non-vessel crops, train products only (crc32(product) % 4 != 0)"
+      },
+      {
+        "file": "adjudicated/train_chips.npz",
+        "chips": 368,
+        "repeat": 8,
+        "note": "hand-adjudicated contacts from 12 of 16 real Sentinel-2 scenes; oversampled so a few hundred real hard negatives are not swamped by 11k mined synthetic chips"
+      }
+    ]
   },
-  "validation_chips": 2332,
+  "validation_chips": 3644,
   "variants": {
     "fp32": {
       "file": "verifier_fp32.onnx",
       "size_kb": 185.4,
-      "val_accuracy": 0.985,
-      "val_auc": 0.9875,
-      "latency_ms_per_32_chips": 31.39,
-      "latency_ms_per_chip": 0.981
+      "val_accuracy": 0.7986,
+      "val_auc": 0.9778,
+      "latency_ms_per_32_chips": 3.11,
+      "latency_ms_per_chip": 0.097
     },
     "int8": {
       "file": "verifier_int8.onnx",
       "size_kb": 59.0,
-      "val_accuracy": 0.9858,
-      "val_auc": 0.987,
-      "latency_ms_per_32_chips": 6.25,
-      "latency_ms_per_chip": 0.195
+      "val_accuracy": 0.8375,
+      "val_auc": 0.9792,
+      "latency_ms_per_32_chips": 3.0,
+      "latency_ms_per_chip": 0.094
     }
-  }
+  },
+  "held_out_real_scenes": {
+    "scenes": ["S2_TAMPA", "S2_LONGBEACH", "S2_PUGETSOUND", "S2_NEWYORK"],
+    "note": "Excluded from training entirely; chips hand-adjudicated by the team. Miami (also a shallow turbid bay) stays in training, so Tampa measures generalisation to an unseen turbid bay rather than memorisation. Reproduce with training/eval_verifier.py.",
+    "chips": 171,
+    "int8_auc_before": 0.744,
+    "int8_auc_after": 0.920,
+    "false_alarms_surviving_threshold_before": 85,
+    "false_alarms_surviving_threshold_after": 29,
+    "true_vessels_lost_after": 7,
+    "clutter_score_median_before": 0.985,
+    "clutter_score_median_after": 0.606,
+    "scene_level_precision_before": 0.503,
+    "scene_level_precision_after": 0.731
+  },
+  "known_weaknesses": [
+    "Scored only at 10 m (Sentinel-2), not the 4.75 m target GSD.",
+    "Shallow turbid water remains the worst case: Tampa Bay precision 0.467 against Puget Sound 0.933.",
+    "Trained on 368 adjudicated chips from one sensor and one season; a different sea state or sun angle is untested."
+  ]
 }

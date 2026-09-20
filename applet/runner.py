@@ -3,15 +3,29 @@ Single entry point for executing a pass: used by the CLI, the benchmark harness,
 the ground-station GUI and the tests, so they all measure exactly the same code path.
 """
 
+import os
+import shutil
 from typing import Dict, Any, Optional, Tuple
 
 from applet.config import AppletConfig
 from applet.core.validator import InputBundleValidator
 from applet.core.telemetry import EdgeTelemetryTracker
+from applet.core.governor import EdgeGovernor
 from applet.pipelines.pipeline_registry import PipelineDispatcher
 from applet.packaging.downlink import DownlinkPackager
+from src.pyFlows.process import route_classified_targets
+from applet.core.unknown_memory import UnknownContactMemory
+from applet.pipelines.ais_correlator import AISKinematicCorrelator, _parse_iso
 
 _RASTER_KEYS = ("array", "nodata_mask", "cloud_mask", "land_mask", "sea_mask", "ndwi", "zmap", "det_mask")
+
+
+def _stage_cost(tracker: EdgeTelemetryTracker) -> Tuple[float, float]:
+    """(wall seconds, cores busy) for the stage that just closed. Both measured."""
+    if not tracker.stages:
+        return 0.0, 0.0
+    last = tracker.stages[-1]
+    return float(last["seconds"]), float(last.get("cores_busy", 0.0))
 
 
 def run_pass(
@@ -24,6 +38,17 @@ def run_pass(
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
     """Returns (context, telemetry_summary, downlink_stats)."""
     config = config or AppletConfig()
+    memory = None
+    if config.ais_correlation.unknown_memory_enabled:
+        memory_path = config.ais_correlation.unknown_memory_path
+        if memory_path is None:
+            memory_path = os.path.join(os.path.dirname(os.path.abspath(output_dir)), "unknown_contact_memory.json")
+        memory = UnknownContactMemory(
+            memory_path,
+            config.ais_correlation.unknown_memory_radius_nm,
+            config.ais_correlation.unknown_memory_required_passes,
+            config.ais_correlation.unknown_memory_max_age_days,
+        )
 
     with EdgeTelemetryTracker(label=f"{config.mission.mission_name}_{track}") as tracker:
         with tracker.stage("Ingest+Validate"):
@@ -38,16 +63,82 @@ def run_pass(
             "valid_scenes": validator.valid_scenes,
             "rejected_scenes": validator.rejected_scenes,
             "ais_catalog": validator.ais_catalog,
+            "known_structures": validator.known_structures,
             "ingest_stats": ingest,
+            "unknown_memory": memory,
         }
+        if memory is not None:
+            correlator = AISKinematicCorrelator(config)
+            context["ais_protected_locations"] = {}
+            for scene in validator.valid_scenes:
+                shutter = _parse_iso(scene.get("shutter_time"))
+                protected = []
+                for ship in validator.ais_catalog:
+                    if abs(correlator._fix_age_hours(ship, shutter)) > config.ais_correlation.max_fix_age_hours:
+                        continue
+                    latitude, longitude = correlator._predict(ship, shutter)
+                    protected.append({"latitude": latitude, "longitude": longitude})
+                context["ais_protected_locations"][scene["id"]] = protected
+
+        # The thermal model runs whenever `report_thermal` is on, but only acts on the
+        # cascade when `governor_enabled` is also on -- see ThermalConfig for why those
+        # are separate switches. A disabled governor cannot change detector output.
+        governor = EdgeGovernor.from_config(config) if config.thermal.report_thermal else None
+        if governor is not None:
+            # Only published when the governor is actually allowed to act. In
+            # reporting-only mode the key stays absent, so `active_profile()` returns
+            # None everywhere and the pipeline behaves exactly as it did before this
+            # module existed -- byte for byte.
+            if governor.enabled:
+                context["cascade_profile"] = governor.profile
+            governor.observe("Ingest+Validate", *_stage_cost(tracker))
 
         for stage in PipelineDispatcher.get_pipeline(track, config):
             name = stage.__class__.__name__
             log(f"[STAGE] {name}")
             with tracker.stage(name):
                 context = stage.process(context)
+            if governor is not None:
+                previous = governor.profile.name
+                profile = governor.observe(name, *_stage_cost(tracker))
+                if governor.enabled:
+                    context["cascade_profile"] = profile
+                    if profile.name != previous:
+                        log(f"[GOVERNOR] {previous} -> {profile.name}: "
+                            f"{governor.decisions[-1].reason}")
 
         context.setdefault("classified_targets", context.get("detected_vessels", []))
+
+        if memory is not None:
+            # Keyed by the scene's acquisition date, so re-running a bundle teaches it nothing new
+            shutter_dates = {s["id"]: str(s.get("shutter_time") or "")[:10] for s in validator.valid_scenes}
+            by_date: Dict[str, list] = {}
+            for target in context["classified_targets"]:
+                if target.get("classification") == "DARK_VESSEL":
+                    coordinates = target.get("world_coordinates", {})
+                    by_date.setdefault(shutter_dates.get(target.get("scene_id"), ""), []).append(
+                        {"latitude": coordinates["latitude"], "longitude": coordinates["longitude"]})
+            for observed_on in sorted(by_date):
+                memory.record_pass(by_date[observed_on], observed_on)
+            memory.save()
+
+        if config.downlink.write_queues:
+            with tracker.stage("QueueRouter"):
+                queue_dir = config.downlink.queue_dir
+                if queue_dir is None:
+                    # This pass owns the default queue, so it holds this pass's crops only. A
+                    # configured queue belongs to whatever scheduler is draining it: leave it alone.
+                    queue_dir = os.path.join(output_dir, "queues")
+                    shutil.rmtree(queue_dir, ignore_errors=True)
+                try:
+                    route_classified_targets(
+                        context.get("screened_scenes", []), context["classified_targets"], queue_dir
+                    )
+                except (OSError, ValueError) as e:
+                    # The crops are a convenience for the file-queue scheduler; the tarball is the
+                    # product. A full disk or an over-long path must not cost the pass its downlink.
+                    context["queue_error"] = f"{type(e).__name__}: {e}"
+                    log(f"[WARN] queue crops not written: {context['queue_error']}")
 
         if not keep_rasters:
             # Free the big arrays before packaging; onboard nothing downstream needs them
@@ -68,5 +159,13 @@ def run_pass(
     telemetry = tracker.get_summary()
     telemetry["verifier"] = context.get("verifier_info", {})
     telemetry["funnel"] = context.get("detection_funnel", {})
+    if governor is not None:
+        # Sits beside the measured RAM and CPU figures. `validated_on_hardware` is False
+        # in every bundle we have ever produced, and saying so in the artifact itself is
+        # the point -- a number a judge cannot tell apart from a measurement is worse
+        # than no number at all.
+        telemetry["thermal"] = governor.summary()
+    if context.get("queue_error"):
+        telemetry["queue_error"] = context["queue_error"]
     DownlinkPackager.write_telemetry(downlink["telemetry_path"], telemetry)
     return context, telemetry, downlink

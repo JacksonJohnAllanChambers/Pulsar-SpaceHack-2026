@@ -74,3 +74,36 @@ def test_physics_only_mode_when_verifier_disabled(bundle_dir, tmp_path):
     context, telemetry, _ = run_pass(bundle_dir, str(tmp_path / "out"), cfg)
     assert telemetry["verifier"]["status"] == "DISABLED"
     assert context["classified_targets"]
+
+
+def test_queue_crops_stay_with_the_pass_and_are_timed(bundle_dir, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "out"
+    stale = out / "queues" / "priority" / "PREVIOUS_PASS.jpg"
+    stale.parent.mkdir(parents=True)
+    stale.write_bytes(b"old")
+
+    context, telemetry, _ = run_pass(bundle_dir, str(out), AppletConfig())
+
+    crops = list((out / "queues").rglob("*.jpg"))
+    assert len(crops) == len(context["classified_targets"]) and not stale.exists()
+    assert not (tmp_path / "src").exists()  # never relative to the working directory
+    assert "QueueRouter" in json.dumps(telemetry)
+
+    config = AppletConfig()
+    config.downlink.write_queues = False
+    run_pass(bundle_dir, str(tmp_path / "quiet"), config)
+    assert not (tmp_path / "quiet" / "queues").exists()
+
+
+def test_a_failed_crop_write_does_not_cost_the_pass_its_downlink(bundle_dir, tmp_path, monkeypatch):
+    import applet.runner as runner
+
+    def full_disk(*args, **kwargs):
+        raise OSError("failed to write crop: disk full")
+
+    monkeypatch.setattr(runner, "route_classified_targets", full_disk)
+    _, telemetry, downlink = run_pass(bundle_dir, str(tmp_path / "out"), AppletConfig())
+
+    assert os.path.getsize(downlink["downlink_tarball_path"]) > 0
+    assert "disk full" in telemetry["queue_error"]
