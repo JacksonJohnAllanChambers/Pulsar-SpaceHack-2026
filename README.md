@@ -588,7 +588,9 @@ works as a regression test rather than a one-off demonstration.
 
 ```bash
 pip install -r requirements-dev.txt
-python scripts/setup_data.py                         # synthetic bundles (add --all for the real datasets)
+python scripts/setup_data.py                         # synthetic bundles only, no downloads (~1 min)
+python scripts/setup_data.py --benchmarks            # the three AIS-scored benchmarks below (~1.5 GB)
+python scripts/setup_data.py --all                   # every dataset, including SEN2MS and thermal (~2.5 GB)
 python -m applet run -i data/sample_bundle -o data/outputs -c config.example.yaml
 python -m ground.server                              # GUI at http://127.0.0.1:8050
 ```
