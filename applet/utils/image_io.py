@@ -151,7 +151,11 @@ def load_scene_raster(
         return out, nodata, status
 
     except Exception as e:  # corrupt header, truncated stream, bad pickle, ...
-        status["error"] = f"DECODE_ERROR: {type(e).__name__}: {str(e)[:120]}"
+        # The class, never the message. This string is downlinked in scene_report.json, and a
+        # library's wording changes between versions: tifffile 2025.5 says "corrupted tag list @8"
+        # where 2026.x says "suspicious number of tags 20291" for the same truncated file, which
+        # was the one byte-level difference between the x86-64 and linux/arm64 tarballs.
+        status["error"] = f"DECODE_ERROR: {type(e).__name__}"
         return None, None, status
 
 
