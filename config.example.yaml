@@ -22,6 +22,12 @@ screening:
   cloud_whiteness_max: 0.30         # (max-min)/mean across the four bands
   cloud_min_area_m2: 40000
   cloud_buffer_m: 40
+  # Sea ice, a fourth class. No SWIR on this payload, so NDSI is unavailable and ice is split
+  # from cloud inside 460-860 nm: ice absorbs toward 865 nm and keeps NDWI positive, cloud
+  # scatters neutrally and sits at zero. Measured on four real Arctic scenes, boundary +0.05.
+  ice_ndwi_min: 0.05
+  ice_ndwi_max: 0.40
+  ice_brightness_min: 0.18
 
 detection:
   cfar_k_sigma: 5.0                 # NIR pixel must exceed local mean by k sigma ...
@@ -38,16 +44,28 @@ detection:
   wake_min_snr: 3.5
   kelvin_half_angle_deg: 19.47      # arcsin(1/3)
   kelvin_tolerance_deg: 6.0
-  min_physics_score: 0.35
+  ice_background_fraction: 0.05        # ice this fraction of the surroundings = ice regime
+  ice_background_radius_m: 600.0
+  lead_min_length_m: 150.0             # open-water channel a vessel breaks through the pack
+  lead_min_snr: 3.0
+  min_physics_score: 0.35              # 0.20 measured: +13 alerts, mostly clutter, no extra confirmed ship
   chip_crop_size_px: 64
 
 verifier:
   enabled: true
   model_path: "applet/models/verifier_int8.onnx"
   fallback_model_path: "applet/models/verifier_fp32.onnx"
-  reject_below: 0.40                # CNN probability under which a candidate is dropped ...
+  reject_below: 0.80                # CNN probability under which a candidate is dropped ...
   physics_override_score: 0.95      # ... unless the physics evidence is this strong
   intra_op_threads: 4
+
+arctic:
+  enabled: false                    # opt in (or --arctic): SHIP / ICEBERG / UNCERTAIN in icy scenes; ice is demoted, never dropped
+  min_scene_ice_pct: 2.0            # screener ice cover below which the question is not asked
+  min_neighbours: 3                 # other bright objects in the contact's chip ...
+  min_neighbours_per_km2: 7.0       # ... and as a density
+  blob_sigma: 4.0
+  iceberg_priority: 0.02
 
 ais_correlation:
   spatial_gating_radius_nm: 1.0
@@ -55,10 +73,40 @@ ais_correlation:
   gate_growth_fraction: 0.25
   max_heading_delta_deg: 35.0
   speed_tolerance_knots: 6.0
+  max_fix_age_hours: 3.0            # an AIS fix older than this cannot identify a contact
   speed_can_raise_anomaly: false    # speed disagreement alone is advisory, not an anomaly
+  unknown_memory_enabled: false      # remember repeated no-AIS areas between passes (state outlives the pass)
+  unknown_memory_radius_nm: 0.08     # nearby detections belong to the same remembered area
+  unknown_memory_required_passes: 3  # suppress only after this many distinct acquisition dates
+  unknown_memory_max_age_days: 180   # forget an area that stops recurring
+  # unknown_memory_path: data/outputs/unknown_contact_memory.json
 
 downlink:
   max_downlink_budget_kb: 500
   include_target_chips: true
   chip_jpeg_quality: 70
   chip_min_priority: 0.5            # known, AIS-consistent traffic does not earn a chip
+  write_queues: true                # context crops for the src/pyFlows downlink scheduler
+  # queue_dir: src/downlink/queues  # default is <output>/queues; set it to feed a running scheduler
+
+thermal:
+  # Orbital thermal model (applet/core/thermal.py) and the cascade governor it drives
+  # (applet/core/governor.py). See README "Thermal governor".
+  report_thermal: true        # model and REPORT a junction temperature in edge_telemetry.json
+  governor_enabled: false     # let the model ACT on the cascade; off by default because the
+                              # decision depends on host timings, so output stops being a pure
+                              # function of the input bundle (same reasoning as unknown_memory)
+  # pin_profile: BEACON       # hold one rung: FULL | REDUCED | SURVEY | BEACON. Operator override.
+
+  # Orbit. eclipse_fraction 0.0 = dawn-dusk SSO, which never gets thermal relief.
+  orbit_period_s: 5676.0      # ~94.6 min, 500 km circular
+  eclipse_fraction: 0.35
+
+  # Spacecraft thermal design. ALL ASSUMED -- we have no bus. Substitute a real one and
+  # every conclusion downstream re-derives itself.
+  radiator_area_m2: 0.090
+  radiator_emissivity: 0.85
+  radiator_absorptivity: 0.20
+  parasitic_load_w: 12.0      # ADCS + comms + OBC + heaters
+  throttle_c: 95.0            # where WE act; Orin's own TJ_max is 105 C
+  target_c: 80.0

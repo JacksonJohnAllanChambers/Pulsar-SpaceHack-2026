@@ -23,7 +23,8 @@ def _scene():
 def _det(heading=315.0, speed=16.0, target_type="VESSEL_UNDERWAY", lat=LAT, lon=LON):
     return {"detection_id": "S1_T001", "scene_id": "S1", "world_coordinates": {"latitude": lat, "longitude": lon},
             "heading_deg": heading, "heading_ambiguous_180": False, "estimated_speed_knots": speed,
-            "target_type": target_type, "size_class": "MEDIUM_VESSEL", "confidence": 0.9}
+            "target_type": target_type, "size_class": "MEDIUM_VESSEL", "confidence": 0.9,
+            "wake_length_m": 600.0, "wake_snr": 20.0}
 
 
 def _run(det, ships):
@@ -87,3 +88,37 @@ def test_broadcaster_with_no_optical_target_is_reported():
     assert out["classified_targets"][0]["classification"] == "DARK_VESSEL"
     assert [g["mmsi"] for g in out["ais_not_observed"]] == [5]
     assert out["ais_not_observed"][0]["reason"] == "CLEAR_WATER_NO_TARGET"
+
+
+def test_stale_fix_from_the_same_berth_does_not_identify_a_contact():
+    """Regression from real AIS: yesterday's broadcast must not 'confirm' a ship that is silent today."""
+    ship = {"mmsi": 6, "name": "YESTERDAY", "latitude": LAT, "longitude": LON, "sog_knots": 0.0, "cog_deg": 0.0,
+            "timestamp": "2026-09-18T12:00:00Z"}
+    out = _run(_det(target_type="VESSEL_STATIONARY_OR_SLOW", speed=None), [ship])
+    assert out["classified_targets"][0]["classification"] == "DARK_VESSEL"
+    assert out["ais_not_observed"] == []
+
+
+def test_short_wake_beside_a_berthed_ship_is_not_an_anomaly():
+    """Regression from real Long Beach AIS: piers beside moored ships read as short wakes."""
+    ship = {"mmsi": 7, "name": "AT BERTH", "latitude": LAT, "longitude": LON, "sog_knots": 0.0, "cog_deg": 0.0,
+            "timestamp": "2026-09-19T12:00:00Z"}
+    det = _det(speed=None)
+    det.update(wake_length_m=120.0, wake_snr=30.0)
+    assert _run(det, [ship])["classified_targets"][0]["classification"] == "CONFIRMED_KNOWN_VESSEL"
+
+
+def test_charted_structure_is_not_a_dark_vessel():
+    ctx = {"detected_vessels": [_det(target_type="VESSEL_STATIONARY_OR_SLOW", speed=None)], "ais_catalog": [],
+           "screened_scenes": [_scene()],
+           "known_structures": [{"name": "OIL ISLAND", "latitude": LAT, "longitude": LON, "radius_m": 200}]}
+    t = AISKinematicCorrelator(AppletConfig()).process(ctx)["classified_targets"][0]
+    assert t["classification"] == "KNOWN_STRUCTURE" and t["downlink_priority"] < 0.1
+
+
+def test_unresolvable_yacht_is_not_a_ghost_transponder():
+    lat, lon = project_dead_reckoning(LAT, LON, 1.0, 45.0, 1.0)
+    yacht = {"mmsi": 8, "name": "TINY", "latitude": lat, "longitude": lon, "sog_knots": 0.0, "cog_deg": 0.0,
+             "timestamp": "2026-09-19T12:00:00Z", "length_m": 9.0}
+    out = _run(_det(), [yacht])
+    assert out["ais_not_observed"][0]["reason"] == "BELOW_SENSOR_RESOLUTION"

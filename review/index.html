@@ -1,0 +1,21 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<title>Contact review</title><style>
+body{margin:0;background:#0e1116;color:#e6edf3;font:14px/1.6 ui-sans-serif,system-ui,sans-serif;padding:28px}
+h1{font-size:19px;margin:0 0 4px}p{color:#8b98a8;max-width:62ch}
+.grid{display:grid;gap:9px;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));margin-top:20px}
+a{display:flex;justify-content:space-between;gap:8px;color:#e6edf3;text-decoration:none;
+background:#171c24;border:1px solid #2a3240;border-radius:8px;padding:10px 12px}
+a:hover{border-color:#58a6ff}a b{color:#58a6ff}
+a .pr{font-size:11px;color:#3fb950}
+</style></head><body><h1>Contact review</h1>
+<p>571 contacts and 18 clear-water AIS misses across 16 real
+Sentinel-2 scenes. Verdicts are shared across every page, so you can stop and resume anywhere;
+press <b>Download labels.json</b> on any page to export the lot.</p>
+<div class="grid"><a href="scene_s2_boston.html" data-scene="S2_BOSTON">BOSTON <b>41</b></a><a href="scene_s2_charleston.html" data-scene="S2_CHARLESTON">CHARLESTON <b>17</b></a><a href="scene_s2_corpus.html" data-scene="S2_CORPUS">CORPUS <b>20</b></a><a href="scene_s2_delaware.html" data-scene="S2_DELAWARE">DELAWARE <b>6</b></a><a href="scene_s2_galveston.html" data-scene="S2_GALVESTON">GALVESTON <b>49</b></a><a href="scene_s2_honolulu.html" data-scene="S2_HONOLULU">HONOLULU <b>46</b></a><a href="scene_s2_longbeach.html" data-scene="S2_LONGBEACH">LONGBEACH <b>45</b></a><a href="scene_s2_miami.html" data-scene="S2_MIAMI">MIAMI <b>81</b></a><a href="scene_s2_mississippi.html" data-scene="S2_MISSISSIPPI">MISSISSIPPI <b>31</b></a><a href="scene_s2_newyork.html" data-scene="S2_NEWYORK">NEWYORK <b>34</b></a><a href="scene_s2_norfolk.html" data-scene="S2_NORFOLK">NORFOLK <b>31</b></a><a href="scene_s2_pugetsound.html" data-scene="S2_PUGETSOUND">PUGETSOUND <b>20</b></a><a href="scene_s2_sandiego.html" data-scene="S2_SANDIEGO">SANDIEGO <b>38</b></a><a href="scene_s2_sanfrancisco.html" data-scene="S2_SANFRANCISCO">SANFRANCISCO <b>11</b></a><a href="scene_s2_savannah.html" data-scene="S2_SAVANNAH">SAVANNAH <b>31</b></a><a href="scene_s2_tampa.html" data-scene="S2_TAMPA">TAMPA <b>88</b></a></div>
+<script>
+let L={}; try { L=JSON.parse(localStorage.getItem("contact_labels_v1")||"{}"); } catch(e){}
+document.querySelectorAll("a[data-scene]").forEach(a=>{
+  const done=Object.keys(L).filter(k=>k.startsWith(a.dataset.scene)||k.startsWith("MISS_"+a.dataset.scene)).length;
+  if(done) a.insertAdjacentHTML("beforeend",`<span class="pr">${done} done</span>`);
+});
+</script></body></html>

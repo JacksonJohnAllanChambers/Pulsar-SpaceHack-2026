@@ -1,0 +1,7 @@
+# Shell scripts run on the Mac mini and inside the Linux image: CRLF from a Windows checkout breaks them
+*.sh text eol=lf
+*.command text eol=lf
+Dockerfile* text eol=lf
+*.jpg binary
+*.png binary
+*.onnx binary

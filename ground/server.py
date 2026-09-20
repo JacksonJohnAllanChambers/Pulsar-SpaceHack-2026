@@ -15,7 +15,11 @@ import json
 import math
 import argparse
 import threading
+import time
+from collections import deque
+from pathlib import Path
 from typing import Dict, Any, Optional
+from xml.etree import ElementTree
 
 import cv2
 import numpy as np
@@ -27,18 +31,50 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from applet.config import AppletConfig  # noqa: E402
+from applet.core.crypto import decrypt_file  # noqa: E402
 from applet.runner import run_pass  # noqa: E402
 from applet.core.exceptions import InvalidManifestError  # noqa: E402
+from applet.core.governor import CASCADE_LADDER, EdgeGovernor, simulate_orbit  # noqa: E402
+from applet.core.thermal import describe_budget  # noqa: E402
+from ground.fleets import FLEETS, dispatch_sent_alerts, load_alerts, parse_alert_filename  # noqa: E402
 from scripts.evaluate import score_context  # noqa: E402
 
 DATA_DIR = os.path.join(ROOT, "data")
 OUTPUT_DIR = os.path.join(DATA_DIR, "outputs", "gui")
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+# The console is the one caller that feeds the file-queue downlink scheduler (src/pyFlows/workflow.py),
+# which drains src/downlink/queues into src/sent. Every other caller keeps crops under its output dir.
+QUEUE_DIR = os.path.join(ROOT, "src", "downlink", "queues")
+SENT_DIR = os.path.join(ROOT, "src", "sent")
+FLEET_ALERT_PATH = os.path.join(DATA_DIR, "outputs", "fleet_alerts.json")
+FLEET_OUTPUT_DIR = os.path.join(ROOT, "src", "fleet_alerts")
+TRANSFER_ROOT = os.path.join(ROOT, "src")
 MAX_LAYER_PX = 2048
+TRANSFER_EVENT_LIMIT = 100
+IMAGE_EXTENSIONS = {".bmp", ".gif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
+TRANSFER_STAGE_LABELS = {
+    "incoming": "Incoming",
+    "processing": "Processing",
+    "priority": "Priority queue",
+    "standard": "Standard queue",
+    "no_ship": "No ship",
+    "sent": "Downlink sent",
+}
+TRANSFER_EVENT_TYPES = {
+    "incoming": "arrived",
+    "processing": "processing",
+    "priority": "queued_priority",
+    "standard": "queued_standard",
+    "no_ship": "no_ship",
+    "sent": "downlinked",
+}
 
 app = FastAPI(title="Tactical Edge Sentinel - Ground Console")
 _state: Dict[str, Any] = {"context": None, "scenes": {}, "chips": {}, "downlink": None}
 _lock = threading.Lock()
+_transfer_lock = threading.Lock()
+_transfer_previous: Dict[str, Dict[str, Any]] = {}
+_transfer_events = deque(maxlen=TRANSFER_EVENT_LIMIT)
 
 
 class RunRequest(BaseModel):
@@ -48,6 +84,13 @@ class RunRequest(BaseModel):
     cloud_cover_max_pct: Optional[float] = None
     verifier_enabled: Optional[bool] = None
     verifier_reject_below: Optional[float] = None
+    # Thermal governor. Off in the flight default because a governed pass depends on
+    # host timings; the console turns it on explicitly so the demo can show it acting.
+    governor_enabled: Optional[bool] = None
+    eclipse_fraction: Optional[float] = None
+    pin_profile: Optional[str] = None
+    # Ship / iceberg / uncertain call. Off in the flight default; only acts in scenes with ice.
+    arctic_enabled: Optional[bool] = None
 
 
 def _jsonable(obj: Any) -> Any:
@@ -64,11 +107,111 @@ def _jsonable(obj: Any) -> Any:
 
 def list_bundles():
     out = []
-    for dirpath, dirnames, filenames in os.walk(DATA_DIR):
+    for dirpath, dirnames, filenames in os.walk(DATA_DIR, followlinks=True):  # data/real may be a symlink
         dirnames[:] = [d for d in dirnames if d not in ("outputs",)]
         if "manifest.json" in filenames:
             out.append(os.path.relpath(dirpath, ROOT).replace("\\", "/"))
     return sorted(out)
+
+
+def transfer_stage_dirs() -> Dict[str, Path]:
+    root = Path(TRANSFER_ROOT)
+    return {
+        "incoming": root / "rawImages",
+        "processing": root / "processing",
+        "priority": root / "downlink" / "queues" / "priority",
+        "standard": root / "downlink" / "queues" / "nonPriority",
+        "no_ship": root / "noShipDetected",
+        "sent": root / "sent",
+    }
+
+
+def _transfer_file(stage: str, path: Path) -> Dict[str, Any]:
+    stat = path.stat()
+    alert = parse_alert_filename(path)
+    return {
+        "id": f"{stage}:{path.name}",
+        "stage": stage,
+        "stage_label": TRANSFER_STAGE_LABELS[stage],
+        "filename": path.name,
+        "bytes": stat.st_size,
+        "modified_at": stat.st_mtime,
+        "image_url": f"/api/transfer-image/{stage}/{path.name}",
+        "alert": alert,
+    }
+
+
+def _fleet_ping(path: Path) -> Dict[str, Any]:
+    info_path = path / "info.xml.enc"
+    record: Dict[str, Any] = {"path": str(path.relative_to(Path(TRANSFER_ROOT))).replace("\\", "/"),
+                              "folder": path.name, "warning": None}
+    try:
+        root = ElementTree.fromstring(decrypt_file(info_path))
+        fleet = root.find("fleet")
+        record.update({
+            "detection_id": root.findtext("detection_id"),
+            "scene_id": root.findtext("scene_id"),
+            "classification": root.findtext("classification"),
+            "latitude": root.findtext("latitude"),
+            "longitude": root.findtext("longitude"),
+            "distance_nm": root.findtext("distance_nm"),
+            "source_filename": root.findtext("source_filename"),
+            "dispatched_at": root.findtext("dispatched_at"),
+            "fleet": {"id": fleet.findtext("id"), "name": fleet.findtext("name"),
+                      "latitude": fleet.findtext("latitude"), "longitude": fleet.findtext("longitude")}
+            if fleet is not None else None,
+        })
+    except (OSError, ElementTree.ParseError) as error:
+        record["warning"] = f"Unable to read encrypted ping metadata: {type(error).__name__}"
+    image_path = path / "image.jpg.enc"
+    if image_path.is_file():
+        record["image_url"] = f"/api/transfer-image/fleet_ping/{path.parent.name}/{path.name}/image.jpg.enc"
+    else:
+        record["warning"] = record["warning"] or "Ping image is missing"
+    return record
+
+
+def _transfer_snapshot() -> Dict[str, Any]:
+    stages = []
+    files = []
+    for stage, directory in transfer_stage_dirs().items():
+        records = []
+        if directory.is_dir():
+            for path in sorted(directory.iterdir(), key=lambda item: item.name.lower()):
+                if not path.is_file() or path.suffix.lower() not in IMAGE_EXTENSIONS:
+                    continue
+                try:
+                    records.append(_transfer_file(stage, path))
+                except OSError:
+                    continue  # A workflow moved the file between iterdir and stat.
+        files.extend(records)
+        stages.append({"id": stage, "label": TRANSFER_STAGE_LABELS[stage], "count": len(records), "files": records})
+
+    pings = []
+    fleet_root = Path(TRANSFER_ROOT) / "fleet_alerts"
+    if fleet_root.is_dir():
+        for info_path in sorted(fleet_root.glob("*/ping_*/info.xml.enc")):
+            pings.append(_fleet_ping(info_path.parent))
+    return {"timestamp": time.time(), "stages": stages, "files": files, "fleet_pings": pings}
+
+
+def transfer_state() -> Dict[str, Any]:
+    """Return a filesystem snapshot plus transitions observed since this server started."""
+    global _transfer_previous
+    with _transfer_lock:
+        snapshot = _transfer_snapshot()
+        current = {item["filename"]: item for item in snapshot["files"]}
+        for filename, item in current.items():
+            previous = _transfer_previous.get(filename)
+            if previous is None or previous["stage"] != item["stage"]:
+                _transfer_events.appendleft({
+                    "event": TRANSFER_EVENT_TYPES[item["stage"]], "timestamp": snapshot["timestamp"],
+                    "filename": filename, "stage": item["stage"], "stage_label": item["stage_label"],
+                    "from_stage": previous["stage"] if previous else None, "alert": item["alert"],
+                })
+        _transfer_previous = current
+        snapshot["events"] = list(_transfer_events)
+        return snapshot
 
 
 @app.get("/")
@@ -76,9 +219,73 @@ def index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"), headers={"Cache-Control": "no-store"})
 
 
+@app.get("/transfer")
+def transfer_index():
+    return FileResponse(os.path.join(STATIC_DIR, "transfer.html"), headers={"Cache-Control": "no-store"})
+
+
+@app.get("/explainer")
+def explainer():
+    return FileResponse(os.path.join(STATIC_DIR, "explainer.html"), headers={"Cache-Control": "no-store"})
+
+
+@app.get("/arctic-explainer")
+def arctic_explainer():
+    return FileResponse(os.path.join(STATIC_DIR, "arctic_explainer.html"), headers={"Cache-Control": "no-store"})
+
+
 @app.get("/api/bundles")
 def bundles():
     return {"bundles": list_bundles()}
+
+
+@app.get("/api/fleet-alerts")
+def fleet_alerts():
+    return {"fleets": FLEETS, "alerts": load_alerts(FLEET_ALERT_PATH)}
+
+
+@app.get("/api/transfer-state")
+def transfer_state_api():
+    return transfer_state()
+
+
+@app.get("/api/transfer-image/{stage}/{filename:path}")
+def transfer_image(stage: str, filename: str):
+    stages = transfer_stage_dirs()
+    if stage == "fleet_ping":
+        root = Path(TRANSFER_ROOT) / "fleet_alerts"
+    else:
+        root = stages.get(stage)
+    if root is None or not filename or Path(filename).is_absolute():
+        raise HTTPException(400, "invalid transfer image path")
+    path = (root / filename).resolve()
+    try:
+        path.relative_to(root.resolve())
+    except ValueError:
+        raise HTTPException(400, "invalid transfer image path")
+    image_name = path.name.removesuffix(".enc")
+    if Path(image_name).suffix.lower() not in IMAGE_EXTENSIONS or not path.is_file():
+        raise HTTPException(404, "transfer image not found")
+    if path.name.endswith(".enc"):
+        return Response(content=decrypt_file(path), media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+    return FileResponse(path, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/fleet-alerts/dispatch")
+def dispatch_fleet_alerts():
+    with _lock:
+        dispatched = dispatch_sent_alerts(SENT_DIR, FLEET_ALERT_PATH, FLEET_OUTPUT_DIR)
+        return {"fleets": FLEETS, "dispatched": dispatched, "alerts": load_alerts(FLEET_ALERT_PATH)}
+
+
+@app.get("/api/sent/{filename}")
+def sent_image(filename: str):
+    if os.path.basename(filename) != filename:
+        raise HTTPException(400, "invalid filename")
+    path = os.path.join(SENT_DIR, filename)
+    if not os.path.isfile(path):
+        raise HTTPException(404, "sent image not found")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @app.post("/api/run")
@@ -88,6 +295,7 @@ def run(req: RunRequest):
         raise HTTPException(400, "bundle must be a directory under data/")
 
     config = AppletConfig.load_from_yaml(os.path.join(ROOT, "config.example.yaml"))
+    config.downlink.queue_dir = QUEUE_DIR
     if req.cfar_k_sigma is not None:
         config.detection.cfar_k_sigma = req.cfar_k_sigma
     if req.min_physics_score is not None:
@@ -98,6 +306,14 @@ def run(req: RunRequest):
         config.verifier.enabled = req.verifier_enabled
     if req.verifier_reject_below is not None:
         config.verifier.reject_below = req.verifier_reject_below
+    if req.governor_enabled is not None:
+        config.thermal.governor_enabled = req.governor_enabled
+    if req.arctic_enabled is not None:
+        config.arctic.enabled = req.arctic_enabled
+    if req.eclipse_fraction is not None:
+        config.thermal.eclipse_fraction = req.eclipse_fraction
+    if req.pin_profile:
+        config.thermal.pin_profile = req.pin_profile
 
     with _lock:
         try:
@@ -157,7 +373,11 @@ def run(req: RunRequest):
                        "min_physics_score": config.detection.min_physics_score,
                        "cloud_cover_max_pct": config.screening.cloud_cover_max_pct,
                        "verifier_enabled": config.verifier.enabled,
-                       "verifier_reject_below": config.verifier.reject_below},
+                       "verifier_reject_below": config.verifier.reject_below,
+                       "governor_enabled": config.thermal.governor_enabled,
+                       "arctic_enabled": config.arctic.enabled,
+                       "eclipse_fraction": config.thermal.eclipse_fraction,
+                       "pin_profile": config.thermal.pin_profile},
         }))
 
 
@@ -231,6 +451,29 @@ def download():
     if not d or not os.path.exists(d["downlink_tarball_path"]):
         raise HTTPException(404, "run a pass first")
     return FileResponse(d["downlink_tarball_path"], filename=os.path.basename(d["downlink_tarball_path"]))
+
+
+@app.get("/api/orbit-sim")
+def orbit_sim(minutes: int = 400):
+    """
+    Thermal trace for the two orbits that matter, plus the ladder and the budget.
+
+    MODELLED, not measured -- the container has no thermal sensors and we never had a
+    Jetson. The payload says so and the console prints it beside every number.
+    """
+    minutes = max(10, min(minutes, 2000))
+    orbits = {}
+    for label, eclipse in (("mid-beta SSO", 0.35), ("dawn-dusk SSO", 0.0)):
+        config = AppletConfig.load_from_yaml(os.path.join(ROOT, "config.example.yaml"))
+        config.thermal.governor_enabled = True
+        config.thermal.eclipse_fraction = eclipse
+        orbits[label] = simulate_orbit(EdgeGovernor.from_config(config), minutes)
+    return JSONResponse({
+        "validated_on_hardware": False,
+        "budget": describe_budget(),
+        "ladder": [dict(p.as_dict(), rationale=p.rationale) for p in CASCADE_LADDER],
+        "orbits": orbits,
+    })
 
 
 @app.get("/api/model_card")

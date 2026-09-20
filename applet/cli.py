@@ -30,6 +30,8 @@ def parse_args():
         help="Pipeline track configuration (default: tactical / Track 1)",
     )
     run_parser.add_argument("--no-verifier", action="store_true", help="Physics-only mode (skip the CNN stage)")
+    run_parser.add_argument("--arctic", action="store_true",
+                            help="In icy scenes, call contacts SHIP / ICEBERG / UNCERTAIN and demote probable ice")
 
     return parser.parse_args()
 
@@ -53,6 +55,8 @@ def main():
     config = AppletConfig.load_from_yaml(args.config)
     if args.no_verifier:
         config.verifier.enabled = False
+    if args.arctic:
+        config.arctic.enabled = True
     print(f"[INFO] Mission: {config.mission.mission_name} | Track: {args.track.upper()}")
     print(f"[INFO] Input bundle: {args.input}")
 
@@ -83,7 +87,8 @@ def main():
         print(
             f"\n[SUMMARY] Dark vessels: {context.get('dark_vessels_count', 0)} | "
             f"Kinematic mismatches: {context.get('spoofing_anomalies_count', 0)} | "
-            f"AIS not observed: {len(context.get('ais_not_observed', []))} | "
+            f"AIS missing in clear water: "
+            f"{sum(1 for a in context.get('ais_not_observed', []) if a['reason'] == 'CLEAR_WATER_NO_TARGET')} | "
             f"Tarball: {downlink['downlink_tarball_path']} ({downlink['final_bundle_kb']} KB)\n"
         )
     else:

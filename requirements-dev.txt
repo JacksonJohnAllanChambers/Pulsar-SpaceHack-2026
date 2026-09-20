@@ -1,10 +1,11 @@
-# Ground-side tooling: tests, the GUI console and verifier training. Never installed in the flight image.
+# Ground-side tooling: tests, the GUI console and the data tools. Never installed in the flight image.
 -r requirements.txt
 pytest>=7.3.0
 pytest-cov>=4.1.0
 fastapi>=0.110.0
 uvicorn>=0.27.0
-# training/train_verifier.py only
-torch>=2.2.0
-onnx>=1.15.0
-onnxscript>=0.1.0
+# scripts/fetch_sentinel2.py (windowed reads of public Sentinel-2 COGs)
+rasterio>=1.3.0
+# scripts/analyze_landsat_thermal.py (ice/water statistics and the thermal contact sheets)
+scipy>=1.10.0
+matplotlib>=3.7.0

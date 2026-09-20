@@ -1,0 +1,50 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  flight:
+    # The environment the judges get: flight requirements only, Python 3.10, pinned versions.
+    # Ground-side tests skip themselves here; tests/test_flight_image.py stages the Dockerfile's
+    # COPY set and runs a pass from it.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install -r requirements.txt -c docker/constraints.txt pytest
+      - run: python -m pytest -q
+
+  dev:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+
+  image:
+    # Builds the real linux/arm64 image under QEMU and runs it with the judging limits.
+    # A does-it-build-and-start check, not a timing: see README "Edge budget".
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
+      - run: docker buildx build --platform linux/arm64 -t jetson-spacehack -f docker/Dockerfile.arm64 --load .
+      # Docker refuses --cpus above the host's core count, and a hosted runner has fewer than the
+      # judges' 6 (2 at the time of writing), so take whatever this runner has rather than pin a
+      # number that breaks when GitHub changes the image. The memory cap is the judges' 14g
+      # verbatim, because that is the limit this job exists to prove we fit inside; core count
+      # only changes how long it takes, and timing from QEMU is meaningless anyway.
+      - run: |
+          docker run --platform linux/arm64 \
+            --memory=14g --memory-swap=14g --cpus="$(nproc)" --network none --rm \
+            jetson-spacehack
