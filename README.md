@@ -638,7 +638,7 @@ the container.
 Other tools:
 
 ```bash
-python -m pytest -q                                  # 162 tests: resilience, physics, sea ice, determinism, flight-image closure
+python -m pytest -q                                  # 143 tests: resilience, physics, sea ice, determinism, flight-image closure
 python scripts/evaluate.py -i data/sample_bundle     # precision / recall / heading / AIS accuracy
 python scripts/evaluate.py --no-verifier             # ...what the CNN buys
 python scripts/generate_synthetic_data.py --random 60 --seed 4242 -o data/heldout_bundle
@@ -817,7 +817,7 @@ training/          verifier training, ONNX export, INT8 quantisation
 scripts/           setup_data (start here), fetchers, scorecard, benchmark, soak, and the study behind each claim
 data/labels/       the team's hand verdicts on 571 US + 51 Svalbard contacts
 review/            the contact sheets they were made on
-tests/             162 tests
+tests/             143 tests
 docker/            Dockerfile.arm64 + pinned constraints
 docs/              OVERVIEW (how it works), SETUP (datasets), RUBRIC_SPEC_SHEET, PITCH_AND_DEMO, GALAXIA_ALIGNMENT, LABELLING
 ```

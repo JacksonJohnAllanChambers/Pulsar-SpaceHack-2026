@@ -72,7 +72,6 @@ archive and `SUBMISSION_MANIFEST.json` (commit, SHA-256s, measured run) land in 
 - [ ] `Jack` merged into `main` (the default branch is what a judge clones)
 - [ ] CI green on the submitted commit, all three jobs
 - [ ] `python scripts/package_submission.py` passes on that commit
-- [ ] Coverage-gap globe committed, or its console button removed (the route is in, the page is not)
 - [ ] Slide deck built from `docs/PITCH_AND_DEMO.md`
 - [ ] Backup recording of the six-click demo
 - [ ] Demo rehearsed once on the laptop that will present it, offline
