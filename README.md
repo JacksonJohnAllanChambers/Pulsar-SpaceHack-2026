@@ -2,6 +2,15 @@
 
 **Onboard dark-vessel detection for a 4.75 m VNIR nanosatellite — Pulsar SpaceHack 2026, Track 1.**
 
+| If you are | Start here |
+| :-- | :-- |
+| **judging this** | **[`SUBMISSION.md`](SUBMISSION.md)** — the four baseline rules and how each is met, what is and is not in the repo, and every document in reading order |
+| running it | [`docs/SETUP.md`](docs/SETUP.md) — install and datasets, one command, no accounts or API keys — or the [quick start](#quick-start) below |
+| running it the way it flies | `./scripts/run_emulated.sh` — builds the ARM64 image and runs a pass under 14 GB, 6 CPUs, `--network none` |
+| looking for the code | the [layout](#layout) at the bottom; [`docs/OVERVIEW.md`](docs/OVERVIEW.md) walks the pipeline stage by stage |
+
+Everything below is the evidence: what was measured, how it was measured, and what it cost when it failed.
+
 A 19 km swath is ~180 MB of raw samples and the ground pass is minutes long. This applet runs on the
 satellite's Jetson Orin NX, finds every vessel in the scene, measures its heading (and speed when the
 wake allows it), checks it against the uplinked AIS picture, and downlinks a **~10 KB** bundle that says
@@ -627,7 +636,7 @@ works as a regression test rather than a one-off demonstration.
 ## Quick start
 
 ```bash
-pip install -r requirements-dev.txt
+pip install -r requirements-dev.txt                  # flight deps + console + tests; requirements.txt alone is the 9 the container ships
 python scripts/setup_data.py                         # synthetic bundles only, no downloads (~1 min)
 python scripts/setup_data.py --benchmarks            # the three AIS-scored benchmarks below (~1.5 GB)
 python scripts/setup_data.py --all                   # every dataset, including SEN2MS and thermal (~2.5 GB)

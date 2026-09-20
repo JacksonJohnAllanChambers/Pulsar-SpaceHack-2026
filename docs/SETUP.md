@@ -1,4 +1,7 @@
-# Collaborator setup
+# Setup — install, datasets, and reproducing every number
+
+For judges and collaborators alike: this is the path from a clean clone to a running applet, and from there
+to each figure quoted in the README.
 
 Nothing large is in git. The code, the two flight models (59 KB + 185 KB) and the docs are; every dataset is
 rebuilt or downloaded by one script. Python 3.10 or 3.11.
