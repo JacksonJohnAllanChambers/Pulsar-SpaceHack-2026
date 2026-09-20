@@ -10,6 +10,7 @@ Pulsar SpaceHack 2026 · Track 1 (free-for-all) · onboard dark-vessel detection
 | :-- | :-- |
 | [`docs/OVERVIEW.md`](docs/OVERVIEW.md) | how it works, one page per idea |
 | [`docs/RUBRIC_SPEC_SHEET.md`](docs/RUBRIC_SPEC_SHEET.md) | every rubric question, our answer, whether it is measured / modelled / unvalidated, and the command that reproduces it |
+| [`docs/RESULTS.md`](docs/RESULTS.md) | the full data appendix — accuracy per scene, edge budget, thermal runs, and what each negative result cost |
 | [`README.md`](README.md) | the full results, including the ones that went against us |
 | [`docs/PITCH_AND_DEMO.md`](docs/PITCH_AND_DEMO.md) | the three-minute pitch, the demo path, and the questions we expect |
 | [`docs/GALAXIA_ALIGNMENT.md`](docs/GALAXIA_ALIGNMENT.md) | who would use it, with sources and dates |
