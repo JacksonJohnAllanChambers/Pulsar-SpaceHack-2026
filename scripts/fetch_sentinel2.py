@@ -58,9 +58,59 @@ US_AOIS = [
     ("S2_SANDIEGO", "San Diego approaches", -117.25, 32.65),
 ]
 
-REGIONS = {"world": AOIS, "us": US_AOIS}
+# Arctic AOIs, for the sea-ice clutter work. These are chosen for ICE, not for traffic: the
+# question they answer is what the detector does when the sea is full of bright ship-sized
+# objects that are not ships. There is no AIS to pair them with -- NOAA Marine Cadastre stops at
+# 50.195 N -- so every contact reports DARK_VESSEL and precision is scored by hand.
+ARCTIC_AOIS = [
+    ("ARC_UTQIAGVIK", "Utqiagvik (Barrow) / Beaufort ice edge", -156.60, 71.35),
+    ("ARC_PRUDHOE", "Prudhoe Bay / Beaufort pack ice", -148.50, 70.55),
+    ("ARC_KOTZEBUE", "Kotzebue Sound freeze-up", -162.60, 66.90),
+    ("ARC_PT_HOPE", "Point Hope / Chukchi marginal ice zone", -166.80, 68.35),
+    ("ARC_BERING_STRAIT", "Bering Strait / Diomede Islands", -168.90, 65.78),
+    ("ARC_WAINWRIGHT", "Wainwright / Chukchi coast", -160.00, 70.65),
+]
+
+# Svalbard AOIs. Unlike the Alaskan ARCTIC_AOIS these are chosen for ice AND traffic, because
+# Kystverket's Kystdatahuset archive is open above the Arctic circle where NOAA's is not: the
+# protection zone around Svalbard is covered and its satellite feed reaches past 84 N. So these
+# are the only scenes we hold that can be scored for *recall* against Arctic AIS the imagery
+# never saw. Pair them with scripts/fetch_kystverket_ais.py. Every one of these has been checked
+# to carry real AIS traffic inside the 20.5 km window within +-20 min of a real acquisition.
+# Atlantic Canada. NOAA Marine Cadastre is a US feed, but the US Coast Guard NAIS receivers in
+# Maine hear across the maritime boundary: Canadian-flag traffic (MMSI 316*) in the Bay of Fundy
+# arrives at normal Class A/B cadence. The repo's "NOAA stops at 50.195 N" note is about LATITUDE
+# and says nothing about the eastern edge -- so this is Canadian water, scored against AIS, with
+# no new ingestion code. Coverage is propagation-dependent and varies hugely by date: probe a
+# candidate date with scripts/probe_canada_ais.py before committing to it. 2024-08-08 measured
+# 15 broadcasters (12 under way) against a 0.07 % cloud acquisition.
+ATLANTIC_AOIS = [
+    ("S2_FUNDY", "Bay of Fundy / Grand Manan channel", -66.75, 44.62),
+    ("S2_DIGBY", "Digby Neck / Fundy approaches", -66.30, 44.45),
+]
+
+SVALBARD_AOIS = [
+    ("SVA_KONGSFJORD", "Kongsfjorden / Ny-Alesund approaches", 11.90, 78.95),
+    ("SVA_ISFJORDEN", "Isfjorden mouth / Longyearbyen approaches", 14.20, 78.25),
+    ("SVA_BARENTSBURG", "Gronfjorden / Barentsburg", 14.25, 78.07),
+    ("SVA_BELLSUND", "Bellsund approaches", 14.00, 77.70),
+    ("SVA_HINLOPEN", "Hinlopen Strait", 19.50, 79.50),
+    ("SVA_STORFJORD", "Storfjorden", 19.00, 77.70),
+    ("SVA_SORKAPP", "Sorkapp / south Spitsbergen", 16.50, 76.55),
+    ("SVA_NORDAUST", "North of Nordaustlandet / pack ice", 22.00, 80.30),
+]
+
+REGIONS = {"world": AOIS, "us": US_AOIS, "arctic": ARCTIC_AOIS, "svalbard": SVALBARD_AOIS,
+           "atlantic": ATLANTIC_AOIS}
 # NOAA Marine Cadastre AIS coverage: Jul-Dec 2024 (earlier 2024 months and 2025 return 404)
 US_WINDOW = ("2024-07-01", "2024-12-31")
+# Melt season: ice still in the water AND the sun above the horizon. Outside roughly
+# June-October a VNIR payload has nothing to work with at these latitudes.
+ARCTIC_WINDOW = ("2024-06-01", "2024-11-01")
+# Same melt-season reasoning, bounded above by the AIS: Kystdatahuset runs about six months
+# behind (2026-03-17 was the last day available when this was written), so the 2025 season is
+# the most recent one that can be paired with AIS at all.
+SVALBARD_WINDOW = ("2023-05-01", "2025-10-15")
 
 
 def stac_search(lon: float, lat: float, start: str, end: str, max_cloud: float, limit: int = 12):
@@ -110,12 +160,21 @@ def main():
     ap.add_argument("--end", default=None)
     ap.add_argument("--max-cloud", type=float, default=5.0)
     ap.add_argument("--only", nargs="*", help="subset of AOI ids")
+    ap.add_argument("--min-ice", type=float, default=0.0,
+                    help="require at least this %% tile snow/ice cover and prefer the iciest "
+                         "(use ~5 with --region arctic)")
     ap.add_argument("--region", choices=sorted(REGIONS), default="world",
                     help="'us' picks AOIs inside NOAA AIS coverage and defaults to its Jul-Dec 2024 window")
     args = ap.parse_args()
 
     aois = REGIONS[args.region]
-    default_start, default_end = US_WINDOW if args.region == "us" else ("2025-04-01", "2026-09-15")
+    default_start, default_end = ("2025-04-01", "2026-09-15")
+    if args.region == "us":
+        default_start, default_end = US_WINDOW
+    elif args.region == "arctic":
+        default_start, default_end = ARCTIC_WINDOW
+    elif args.region == "svalbard":
+        default_start, default_end = SVALBARD_WINDOW
     args.start = args.start or default_start
     args.end = args.end or default_end
 
@@ -138,6 +197,13 @@ def main():
             print(f"  STAC search failed: {e}")
             continue
         done = False
+        if args.min_ice > 0.0:
+            # Least-cloudy is the wrong order here: an ice-free scene is useless for this bundle.
+            # s2:snow_ice_percentage is per whole tile, so it ranks candidates rather than
+            # describing the window actually cut -- good enough to choose between acquisitions.
+            items = [it for it in items
+                     if (it["properties"].get("s2:snow_ice_percentage") or 0.0) >= args.min_ice]
+            items.sort(key=lambda it: -(it["properties"].get("s2:snow_ice_percentage") or 0.0))
         for item in items:
             props = item["properties"]
             try:

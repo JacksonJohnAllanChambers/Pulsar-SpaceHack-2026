@@ -17,6 +17,7 @@ import numpy as np
 from typing import Dict, Any, List, Optional
 
 from applet.core.base import BasePipeline
+from applet.core.governor import active_profile
 
 CHIP_SCALE = 0.10  # reflectance units mapped to 1.0 at the network input
 
@@ -77,8 +78,17 @@ class ChipVerifier(BasePipeline):
     def process(self, context: Dict[str, Any]) -> Dict[str, Any]:
         cfg = self.config.verifier
         detections = context.get("detected_vessels", [])
+
+        # The governor can shed the CNN entirely (BEACON). That is the last rung and the
+        # most expensive thing to give up: without it every contact ships UNVERIFIED and
+        # the false-alarm rate rises sharply. The existing "no session" degradation path
+        # already does exactly the right thing -- physics-only scoring, pass still
+        # completes -- so shedding reuses it rather than inventing a second one.
+        profile = active_profile(context)
+        shed = profile is not None and not profile.verifier_enabled
+
         info = {
-            "status": self.status,
+            "status": "SHED_BY_GOVERNOR" if shed else self.status,
             "model": os.path.basename(self.model_path) if self.model_path else None,
             "model_bytes": os.path.getsize(self.model_path) if self.model_path else 0,
             "providers": self.providers,
@@ -87,7 +97,7 @@ class ChipVerifier(BasePipeline):
             "rejected": 0,
         }
 
-        if self.session is not None and detections:
+        if self.session is not None and detections and not shed:
             chips = np.stack([d["chip_tensor"] for d in detections])
             t0 = time.perf_counter()
             try:

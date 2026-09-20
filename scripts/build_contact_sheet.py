@@ -238,6 +238,18 @@ nav a.full{border-color:var(--vessel);color:var(--vessel)}
 <button id="dl">Download labels.json</button>
 <button id="clr" class="ghost">Reset</button>
 </header>
+<div id="dumpbox" style="display:none;position:fixed;inset:6vh 6vw;z-index:999;background:#10161d;
+  border:1px solid #2b3a4a;border-radius:10px;padding:14px;box-shadow:0 10px 40px rgba(0,0,0,.6)">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+    <b style="font-size:13px">labels.json &mdash; select all and copy</b>
+    <span style="color:#7f93a8;font-size:11.5px">The download may be blocked if this page is inside a
+      sandboxed viewer. This text is the same payload; paste it into a file named labels.json.</span>
+    <button id="dumpclose" style="margin-left:auto">Close</button>
+  </div>
+  <textarea id="dumpta" readonly spellcheck="false" style="width:100%;height:calc(100% - 42px);
+    background:#0b121a;color:#d7e2ee;border:1px solid #223245;border-radius:6px;padding:8px;
+    font:12px ui-monospace,Consolas,monospace;resize:none"></textarea>
+</div>
 __NAV__
 <main id="grid"></main>
 <script src="config.js"></script>
@@ -386,9 +398,27 @@ document.addEventListener("keydown", e => {
 document.getElementById("dl").onclick = () => {
   const payload = {generated: new Date().toISOString(),
     labelled: Object.keys(labels).length, total: GRAND_TOTAL, labels: labels};
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], {type: "application/json"}));
-  a.download = "labels.json"; a.click();
+  const text = JSON.stringify(payload, null, 1);
+  // Try the real download first, then ALWAYS surface the same JSON as selectable text.
+  // Inside a sandboxed iframe -- Claude's file panel, some embedded viewers, an email
+  // client preview -- a.click() on a download link is silently blocked: no file, no
+  // error, no clue. That silently loses an hour of adjudication. A textarea cannot be
+  // blocked by any sandbox, so it is the path that always works.
+  try {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], {type: "application/json"}));
+    a.download = "labels.json";
+    a.click();
+  } catch (e) { /* blocked; the textarea below is the fallback */ }
+  try { if (navigator.clipboard) navigator.clipboard.writeText(text); } catch (e) {}
+  const ta = document.getElementById("dumpta");
+  ta.value = text;
+  document.getElementById("dumpbox").style.display = "block";
+  ta.focus();
+  ta.select();
+};
+document.getElementById("dumpclose").onclick = () => {
+  document.getElementById("dumpbox").style.display = "none";
 };
 document.getElementById("clr").onclick = () => {
   if (confirm("Clear every verdict on this browser? Anything already synced stays in the shared sheet.")) {
