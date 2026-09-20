@@ -541,8 +541,10 @@ byte-for-byte on every run.
 The first rung is free: **REDUCED keeps every one of the 46 AIS-confirmed ships and all 18
 dark-vessel alerts while cutting the downlink 60 %** — it only drops the JPEG evidence crops.
 SURVEY drops the wake ray transform and loses 5 AIS-confirmed ships with it (no wake term in the
-physics score, so borderline contacts fall under `min_physics_score`). BEACON drops the CNN and
-false alarms go up **6.7×**, as its own rationale string predicts — still worth having when the
+physics score, so borderline contacts fall under `min_physics_score`). BEACON drops the CNN and, on
+this synthetic bundle, false alarms go up **6.7×** — but see `docs/RESULTS.md` §7, where the same
+sweep on 16 real scenes shows BEACON *losing* contacts to the candidate cap instead (251 dark → 175),
+which is the worse failure because a flood is visible and a silent drop is not. Still worth having when the
 alternative is reporting nothing.
 
 **We do not quote a speed number, because we could not measure one.** The power cap and worker

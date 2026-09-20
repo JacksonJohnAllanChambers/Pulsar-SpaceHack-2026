@@ -144,6 +144,12 @@ dawn-dusk SSO never gets an eclipse, and the console shows it settling permanent
 Four-rung ladder, measured: FULL 18 dark / 46 AIS / 18.0 KB · **REDUCED 18 / 46 / 7.3 KB (free)** ·
 SURVEY 18 / 41 / 6.6 KB · BEACON 121 / 44 / 9.9 KB.
 
+**Re-run on the 16 real scenes** (`docs/RESULTS.md` §7): REDUCED is still exactly free — same 807
+candidates, 251 dark vessels, 109 AIS-confirmed, all 15 kinematic mismatches, downlink **87.3 → 22.5 KB**.
+Two corrections the synthetic bundle hid: below REDUCED the *spoofing* detector dies (mismatches
+15 → 1 → 0, and total AIS matches 124 → 117 → 104), and BEACON does not flood the operator on real
+imagery — it silently drops contacts when the candidate cap binds.
+
 **If asked about speed, do not invent one:** the power cap and worker count are exact configuration; what
 that does to wall-clock we could not measure — spread within one rung exceeded the gap between rungs, and
 re-running moved the median across 6.51 / 8.33 / 9.73 s. We withdrew a "9% slower" line rather than defend
